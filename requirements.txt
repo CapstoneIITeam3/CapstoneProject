@@ -8,3 +8,4 @@ pandas==2.3.3
 joblib==1.6.0
 matplotlib==3.10.9
 requests==2.34.2
+flasgger==0.9.7.1
