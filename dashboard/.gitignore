@@ -1,0 +1,7 @@
+threats.db
+__pycache__/
+*.pyc
+venv/
+.env
+data/*.csv
+data/*.txt

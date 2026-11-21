@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Log history{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Log history</h1><div class="sub">Every processed record with its classification · filter, sort, inspect and export</div></div>
+  <button class="btn" id="exportBtn">
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8m0 0-3-3m3 3 3-3M3 13h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Export CSV
+  </button>
+</div>
+
+<form class="card filters" id="filters">
+  <label class="field">From<input type="datetime-local" name="start"></label>
+  <label class="field">To<input type="datetime-local" name="end"></label>
+  <div class="field" style="font-size:12px;color:var(--text-secondary);font-weight:600">Classification
+    <div class="chk">
+      <label><input type="checkbox" name="tier" value="Normal"> Normal</label>
+      <label><input type="checkbox" name="tier" value="Suspicious"> Suspicious</label>
+      <label><input type="checkbox" name="tier" value="Malicious"> Malicious</label>
+    </div>
+  </div>
+  <label class="field">Category
+    <select name="category"><option value="">Any</option><option>DoS</option><option>Probe</option><option>R2L</option><option>U2R</option></select>
+  </label>
+  <label class="field">Min score<input type="number" name="min_score" min="0" max="1" step="0.05" placeholder="0.00" style="width:90px"></label>
+  <label class="field">Search IP / service<input type="search" name="q" placeholder="e.g. 185.220" style="width:170px"></label>
+  <div class="spacer"></div>
+  <div style="display:flex;gap:8px">
+    <button type="button" class="btn" id="resetBtn">Reset</button>
+    <button type="submit" class="btn primary">Apply filters</button>
+  </div>
+</form>
+
+<section class="card">
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr>
+        <th class="sortable" data-sort="id">ID<span class="arrow">↕</span></th>
+        <th class="sortable sorted" data-sort="time">Time<span class="arrow">↓</span></th>
+        <th>Source</th><th>Destination</th><th>Protocol</th><th>Service</th><th>Flag</th>
+        <th class="num">Src bytes</th>
+        <th class="sortable" data-sort="score">Score<span class="arrow">↕</span></th>
+        <th>Status</th><th>Category</th><th>Alert</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="12" class="empty"><span class="spinner"></span> Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="pager">
+    <span id="pageInfo"></span>
+    <div class="btns">
+      <label class="secondary" style="font-size:12px">Rows <select id="perPage"><option>25</option><option>50</option><option>100</option></select></label>
+      <button class="btn sm" id="prevBtn">← Prev</button>
+      <span id="pageNum" class="mono"></span>
+      <button class="btn sm" id="nextBtn">Next →</button>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const { api, $, esc, fmtDateTime, fmtBytes, fmtNum, pill, statusPill, scoreBar, openLog, toast } = TW;
+  const state = { page: 1, sort: 'time', order: 'desc', per_page: 25 };
+  const form = $('#filters');
+
+  // allow deep links like /logs?tier=Malicious
+  const init = new URLSearchParams(location.search);
+  init.getAll('tier').join(',').split(',').filter(Boolean).forEach((t) => { const c = form.querySelector(`[name=tier][value="${t}"]`); if (c) c.checked = true; });
+  ['category', 'min_score', 'q'].forEach((k) => init.get(k) && (form.elements[k].value = init.get(k)));
+
+  function params() {
+    const p = new URLSearchParams();
+    const fd = new FormData(form);
+    const tiers = fd.getAll('tier');
+    if (tiers.length) p.set('tier', tiers.join(','));
+    for (const k of ['category', 'min_score', 'q']) if (fd.get(k)) p.set(k, fd.get(k));
+    // datetime-local is local time -> send UTC ISO
+    for (const k of ['start', 'end']) if (fd.get(k)) p.set(k, new Date(fd.get(k)).toISOString());
+    p.set('sort', state.sort); p.set('order', state.order);
+    return p;
+  }
+
+  async function load() {
+    const minS = form.elements.min_score;
+    if (minS.value && (minS.value < 0 || minS.value > 1)) { toast('Min score must be between 0 and 1', true); return; }
+    const s = form.elements.start.value, e = form.elements.end.value;
+    if (s && e && new Date(s) > new Date(e)) { toast('"From" must be before "To"', true); return; }
+    const p = params(); p.set('page', state.page); p.set('per_page', state.per_page);
+    $('#rows').style.opacity = .5;
+    try {
+      const r = await api('/api/logs?' + p);
+      $('#rows').innerHTML = r.items.length ? r.items.map((x) => `
+        <tr data-id="${x.id}" class="row-${x.tier}">
+          <td class="mono muted">${x.id}</td>
+          <td class="mono">${fmtDateTime(x.timestamp)}</td>
+          <td class="mono">${esc(x.src_ip || '—')}</td>
+          <td class="mono">${esc(x.dst_ip || '—')}</td>
+          <td class="mono">${esc(x.protocol)}</td>
+          <td class="mono">${esc(x.service)}</td>
+          <td class="mono">${esc(x.flag)}</td>
+          <td class="num mono">${fmtBytes(x.src_bytes)}</td>
+          <td>${scoreBar(x.threat_score, x.tier)}</td>
+          <td>${pill(x.tier)}</td>
+          <td class="cat">${esc(x.attack_category || '—')}</td>
+          <td>${x.alert_id ? statusPill(x.alert_status) : '<span class="muted">—</span>'}</td>
+        </tr>`).join('')
+        : `<tr><td colspan="12" class="empty"><strong>No results found</strong>No records match these filters. Try widening the date range or clearing some filters.</td></tr>`;
+      const from = r.total ? (r.page - 1) * r.per_page + 1 : 0;
+      $('#pageInfo').textContent = `Showing ${fmtNum(from)}–${fmtNum(Math.min(r.page * r.per_page, r.total))} of ${fmtNum(r.total)} records`;
+      $('#pageNum').textContent = `${r.page} / ${Math.max(r.pages, 1)}`;
+      $('#prevBtn').disabled = r.page <= 1;
+      $('#nextBtn').disabled = r.page >= r.pages;
+    } catch (err) {
+      $('#rows').innerHTML = `<tr><td colspan="12" class="empty"><strong>Couldn't load records</strong>${esc(err.message)}</td></tr>`;
+    } finally { $('#rows').style.opacity = 1; }
+  }
+
+  form.addEventListener('submit', (e) => { e.preventDefault(); state.page = 1; load(); });
+  $('#resetBtn').addEventListener('click', () => { form.reset(); state.page = 1; load(); });
+  $('#prevBtn').addEventListener('click', () => { state.page--; load(); });
+  $('#nextBtn').addEventListener('click', () => { state.page++; load(); });
+  $('#perPage').addEventListener('change', (e) => { state.per_page = +e.target.value; state.page = 1; load(); });
+  document.querySelectorAll('th.sortable').forEach((th) => th.addEventListener('click', () => {
+    const k = th.dataset.sort;
+    state.order = state.sort === k && state.order === 'desc' ? 'asc' : 'desc';
+    state.sort = k; state.page = 1;
+    document.querySelectorAll('th.sortable').forEach((t) => { t.classList.toggle('sorted', t === th); t.querySelector('.arrow').textContent = t === th ? (state.order === 'desc' ? '↓' : '↑') : '↕'; });
+    load();
+  }));
+  $('#rows').addEventListener('click', (e) => { const tr = e.target.closest('tr[data-id]'); if (tr) openLog(tr.dataset.id); });
+  $('#exportBtn').addEventListener('click', () => { location.href = '/api/logs/export.csv?' + params(); });
+  document.addEventListener('tw:alert-changed', load);
+  load();
+})();
+</script>
+{% endblock %}

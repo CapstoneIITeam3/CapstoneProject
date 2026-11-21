@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Threat overview</h1>
+    <div class="sub" id="updatedAt">Loading…</div>
+  </div>
+  <div class="status-strip">
+    <span class="chip" id="detChip">detector: …</span>
+    <span class="chip" id="thrChip">thresholds: …</span>
+    <span class="chip" id="evalChip" hidden></span>
+    <button class="btn primary" id="analyzeBtn">
+      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      Analyze a record
+    </button>
+  </div>
+</div>
+
+<section class="grid stats" aria-label="Summary">
+  <div class="card stat">
+    <div class="label">Total logs analysed</div>
+    <div class="value" id="sTotal">—</div>
+    <div class="foot"><span><b id="sNormal">—</b> normal</span><span id="sRate"></span></div>
+  </div>
+  <div class="card stat">
+    <div class="label">Threats detected</div>
+    <div class="value" id="sThreats">—</div>
+    <div class="foot">
+      <span><b id="sMal">—</b> malicious</span>
+      <span><b id="sSus">—</b> suspicious</span>
+    </div>
+  </div>
+  <div class="card stat" id="riskCard">
+    <div class="label">Current risk level</div>
+    <div class="value" id="sRisk">—</div>
+    <div class="risk-meter" aria-hidden="true"><span class="l1"></span><span class="l2"></span><span class="l3"></span><span class="l4"></span></div>
+    <div class="foot" style="margin-top:6px"><span id="sRiskWhy"></span></div>
+  </div>
+  <div class="card stat">
+    <div class="label">Open alerts</div>
+    <div class="value" id="sOpen">—</div>
+    <div class="foot"><a href="{{ url_for('alerts_page') }}">Review alerts →</a></div>
+  </div>
+</section>
+
+<section class="grid charts">
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Threat activity over time</h2>
+        <div class="sub" id="activitySub">Flagged records per minute</div>
+      </div>
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+        <div class="legend">
+          <span><i style="background:#d03b3b"></i>Malicious</span>
+          <span><i style="background:#fab219"></i>Suspicious</span>
+        </div>
+        <div class="toggle-group" id="rangeToggle" role="group" aria-label="Time range">
+          <button data-min="30" class="on">30m</button><button data-min="180">3h</button><button data-min="1440">24h</button>
+        </div>
+      </div>
+    </div>
+    <div class="chart-box tall"><canvas id="activityChart" aria-label="Stacked bar chart of suspicious and malicious records per time bucket"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div>
+        <h2>Threat score distribution</h2>
+        <div class="sub" id="histSub">Last records, by combined model score</div>
+      </div>
+    </div>
+    <div class="legend" style="margin-bottom:8px">
+      <span><i class="line" style="border-color:#fab219"></i>Suspicious threshold</span>
+      <span><i class="line" style="border-color:#d03b3b"></i>Malicious threshold</span>
+    </div>
+    <div class="chart-box"><canvas id="histChart" aria-label="Histogram of threat scores with threshold markers"></canvas></div>
+  </div>
+</section>
+
+<section class="grid charts-2">
+  <div class="card">
+    <div class="card-head"><div><h2 id="catTitle">Detected attack categories</h2><div class="sub" id="catSub">All-time, predicted by the model</div></div></div>
+    <div class="chart-box" style="height:200px"><canvas id="catChart" aria-label="Bar chart of detections per attack category"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><h2>Classification breakdown</h2><div class="sub">Share of all analysed records</div></div></div>
+    <div class="chart-box" style="height:200px"><canvas id="tierChart" aria-label="Bar chart of records per severity tier"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div><h2>Top threat sources</h2><div class="sub">Source IPs with most flagged records</div></div></div>
+    <ul class="top-sources" id="topSources"><li class="muted">Loading…</li></ul>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <div><h2>Live log feed</h2><div class="sub">Newest first · click a row for full details</div></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <label class="chk secondary" style="font-size:13px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="onlyThreats"> Threats only</label>
+      <button class="btn sm" id="pauseBtn" aria-pressed="false">Pause</button>
+      <a class="btn sm" href="{{ url_for('logs_page') }}">Full history →</a>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr>
+        <th>Time</th><th>Source</th><th>Destination</th><th>Protocol</th><th>Service</th>
+        <th>Score</th><th>Status</th><th>Category</th>
+      </tr></thead>
+      <tbody id="feed"><tr><td colspan="8" class="empty"><span class="spinner"></span> Loading log entries…</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- manual record entry (SRS §3.1.1 — with client-side validation) -->
+<div class="modal-bg" id="analyzeModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="anTitle">
+    <div class="modal-head">
+      <div><h2 id="anTitle">Analyze a connection record</h2><div class="sub">Sends the record to the detection engine (POST /api/classify). Unlisted NSL-KDD features default to 0.</div></div>
+      <button class="x" data-close aria-label="Close">×</button>
+    </div>
+    <form id="analyzeForm" novalidate>
+      <div class="modal-body">
+        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+          <span class="muted" style="font-size:12px;align-self:center">Presets:</span>
+          <button type="button" class="btn sm" data-preset="normal">Normal web</button>
+          <button type="button" class="btn sm" data-preset="synflood">SYN flood (DoS)</button>
+          <button type="button" class="btn sm" data-preset="scan">Port scan (Probe)</button>
+          <button type="button" class="btn sm" data-preset="brute">Password guess (R2L)</button>
+          <button type="button" class="btn sm" data-preset="root">Root shell (U2R)</button>
+        </div>
+        <div class="form-grid" id="anFields"></div>
+        <div class="result-box" id="anResult" hidden></div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn" data-close>Close</button>
+        <button type="submit" class="btn primary" id="anSubmit">Classify</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>{% endblock %}
