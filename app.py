@@ -38,6 +38,8 @@ from flask_login import (
     logout_user,
 )
 from flasgger import Swagger
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
 
 import simulator
@@ -100,6 +102,14 @@ swagger = Swagger(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 login_manager.session_protection = "strong"
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=["200 per minute"],
+    storage_uri="memory://",
+    strategy="fixed-window",
+)
 
 
 @login_manager.user_loader
@@ -350,11 +360,31 @@ def bad_request(e):
     return render_template("error.html", code=400, message=getattr(e, "description", "Bad request")), 400
 
 
+@app.errorhandler(429)
+def ratelimit_exceeded(e):
+    log.warning("Rate limit exceeded for IP %s: %s", request.remote_addr, e.description)
+    if request.path.startswith("/api/"):
+        return jsonify(
+            error="Too Many Requests",
+            message="Rate limit exceeded. Please slow down your requests.",
+            details=str(e.description),
+        ), 429
+    return (
+        render_template(
+            "error.html",
+            code=429,
+            message=f"Too many requests from your IP ({e.description}). Please wait a moment and try again.",
+        ),
+        429,
+    )
+
+
 # ---------------------------------------------------------------- Authentication
 _failed = {}  # ip -> (count, first_ts)
 
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("dashboard"))
@@ -563,6 +593,7 @@ def _risk_level():
 
 # ---------------------------------------------------------------- REST API Endpoints
 @app.route("/api/classify", methods=["POST"])
+@limiter.limit("60 per minute")
 def api_classify():
     """
     Ingest and classify network traffic via ML models
@@ -607,6 +638,7 @@ def api_classify():
 
 
 @app.route("/api/predict", methods=["POST"])
+@limiter.limit("120 per minute")
 def api_predict():
     """
     Backward-compatible prediction endpoint for traffic simulator
