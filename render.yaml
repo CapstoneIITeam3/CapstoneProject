@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: threatwatch-ai-ids
+    runtime: python
+    region: oregon
+    plan: free
+    branch: feature/dhyey-integration
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --config gunicorn.conf.py app:app
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: PORT
+        value: 10000
+      - key: SECRET_KEY
+        generateValue: true
+      - key: MONGO_URI
+        sync: false
+      - key: MONGO_DB_NAME
+        value: ai_ids_db
+      - key: SEED_DEMO
+        value: "1"
+      - key: REPLAY
+        value: "1"
+      - key: ADMIN_USER
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        value: threatwatch-a41a0
+      - key: FIREBASE_API_KEY
+        value: AIzaSyD8MwBtD4jb_xvqSwiE5PpfTJH1AyWKghU
+      - key: FIREBASE_AUTH_DOMAIN
+        value: threatwatch-a41a0.firebaseapp.com
+      - key: FIREBASE_STORAGE_BUCKET
+        value: threatwatch-a41a0.firebasestorage.app
+      - key: FIREBASE_MESSAGING_SENDER_ID
+        value: "289561180633"
+      - key: FIREBASE_APP_ID
+        value: 1:289561180633:web:87b2d30ba98b043ac641c8
+      - key: FIREBASE_MEASUREMENT_ID
+        value: G-F5N5Y35YXX
