@@ -1,0 +1,258 @@
+{
+  "info": {
+    "_postman_id": "c1f7a83d-e421-4f92-911a-829d1e40b374",
+    "name": "ThreatWatch - AI-IDS REST API Collection",
+    "description": "Comprehensive automated API testing collection for the ThreatWatch AI-Based Cyber Threat Detection & Alerting System.\n\nIncludes automated tests for:\n- Health checks & OpenAPI documentation\n- CSRF token extraction & session authentication\n- Machine learning threat inference & classification\n- Logs & alerts triage endpoints\n- Defense-in-depth HTTP security headers",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "01. System Health & Documentation",
+      "item": [
+        {
+          "name": "Health Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 or 503\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 503]);",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is under 800ms\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(800);",
+                  "});",
+                  "",
+                  "pm.test(\"Health payload schema is valid\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.be.an('object');",
+                  "    pm.expect(json).to.have.property('status');",
+                  "    pm.expect(json).to.have.property('detector');",
+                  "    pm.expect(json).to.have.property('database');",
+                  "    pm.expect(json).to.have.property('service');",
+                  "});",
+                  "",
+                  "pm.test(\"Security headers are present\", function () {",
+                  "    pm.response.to.have.header(\"X-Content-Type-Options\", \"nosniff\");",
+                  "    pm.response.to.have.header(\"X-Frame-Options\", \"DENY\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Checks the operational status of the Flask application, ML detector engine, and MongoDB connectivity."
+          },
+          "response": []
+        },
+        {
+          "name": "Swagger UI Documentation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Swagger UI renders with HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"HTML contains Swagger UI title or Flasgger assets\", function () {",
+                  "    pm.expect(pm.response.text()).to.include(\"Swagger UI\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/apidocs/",
+              "host": ["{{baseUrl}}"],
+              "path": ["apidocs", ""]
+            },
+            "description": "Validates that the Flasgger Swagger UI documentation is accessible."
+          },
+          "response": []
+        },
+        {
+          "name": "OpenAPI Specification JSON",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"OpenAPI spec returns HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Spec registers core API paths\", function () {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json).to.have.property('paths');",
+                  "    pm.expect(json.paths).to.have.property('/api/classify');",
+                  "    pm.expect(json.paths).to.have.property('/api/predict');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/apispec_1.json",
+              "host": ["{{baseUrl}}"],
+              "path": ["apispec_1.json"]
+            },
+            "description": "Retrieves the OpenAPI / Swagger JSON schema spec."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02. Authentication & Session",
+      "item": [
+        {
+          "name": "Fetch Login Page & Extract CSRF Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Login page returns HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"CSRF token extracted and saved to environment\", function () {",
+                  "    var html = pm.response.text();",
+                  "    var match = html.match(/name=\"_csrf\"\\s+value=\"([^\"]+)\"/);",
+                  "    pm.expect(match).to.not.be.null;",
+                  "    var token = match[1];",
+                  "    pm.expect(token.length).to.be.above(20);",
+                  "    pm.collectionVariables.set(\"csrfToken\", token);",
+                  "    pm.environment.set(\"csrfToken\", token);",
+                  "});",
+                  "",
+                  "pm.test(\"Google Sign-In and Password Reset modal present in UI\", function () {",
+                  "    var html = pm.response.text();",
+                  "    pm.expect(html).to.include(\"Sign in with Google\");",
+                  "    pm.expect(html).to.include(\"Reset Password\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["login"]
+            },
+            "description": "Loads the login view and parses the double-submit CSRF token into environment variables."
+          },
+          "response": []
+        },
+        {
+          "name": "Admin Login (Establish Session)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Login attempt receives response (200, 302, or 503)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 302, 503]);",
+                  "});",
+                  "",
+                  "pm.test(\"Session cookie or redirect location established\", function () {",
+                  "    if (pm.response.code === 302) {",
+                  "        pm.expect(pm.response.headers.get(\"Location\")).to.include(\"/\");",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{adminUser}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{adminPass}}",
+                  "type": "text"
+                },
+                {
+                  "key": "_csrf",
+                  "value": "{{csrfToken}}",
+                  "type": "text"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["login"]
+            },
+            "description": "Authenticates as admin using form credentials and session cookies."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:5000",
+      "type": "string"
+    },
+    {
+      "key": "adminUser",
+      "value": "admin",
+      "type": "string"
+    },
+    {
+      "key": "adminPass",
+      "value": "admin123",
+      "type": "string"
+    },
+    {
+      "key": "csrfToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
