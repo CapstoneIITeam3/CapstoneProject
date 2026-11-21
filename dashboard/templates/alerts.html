@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Alerts{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Alerts</h1><div class="sub">Flagged events, newest first · acknowledge once reviewed, dismiss false positives</div></div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <label class="field" style="flex-direction:row;align-items:center;gap:8px">Severity
+      <select id="sev"><option value="">All</option><option>Malicious</option><option>Suspicious</option></select>
+    </label>
+    <button class="btn" id="ackAll">Acknowledge all open</button>
+  </div>
+</div>
+
+<section class="card">
+  <div class="tabs" role="tablist">
+    <button data-status="open" class="on" role="tab">Open<span class="n" id="nOpen">0</span></button>
+    <button data-status="acknowledged" role="tab">Acknowledged<span class="n" id="nAck">0</span></button>
+    <button data-status="dismissed" role="tab">Dismissed<span class="n" id="nDis">0</span></button>
+    <button data-status="" role="tab">All</button>
+  </div>
+  <div class="table-wrap">
+    <table class="data">
+      <thead><tr>
+        <th>Alert</th><th>Raised</th><th>Severity</th><th>Category</th><th>Source → Destination</th><th>Service</th>
+        <th>Score</th><th>Status</th><th>Reviewed</th><th>E-mail</th><th></th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="11" class="empty"><span class="spinner"></span> Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="pager">
+    <span id="pageInfo"></span>
+    <div class="btns">
+      <button class="btn sm" id="prevBtn">← Prev</button>
+      <span id="pageNum" class="mono"></span>
+      <button class="btn sm" id="nextBtn">Next →</button>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const { api, $, esc, fmtDateTime, fmtNum, ago, pill, statusPill, scoreBar, openLog, toast } = TW;
+  const st = { status: 'open', page: 1 };
+  async function load() {
+    const p = new URLSearchParams({ page: st.page, per_page: 25 });
+    if (st.status) p.set('status', st.status);
+    if ($('#sev').value) p.set('severity', $('#sev').value);
+    try {
+      const r = await api('/api/alerts?' + p);
+      $('#nOpen').textContent = fmtNum(r.counts.open);
+      $('#nAck').textContent = fmtNum(r.counts.acknowledged);
+      $('#nDis').textContent = fmtNum(r.counts.dismissed);
+      $('#rows').innerHTML = r.items.length ? r.items.map((a) => `
+        <tr data-log="${a.log_id}" class="row-${a.status === 'open' ? a.severity : ''}">
+          <td class="mono">#${a.id}</td>
+          <td><span class="mono">${fmtDateTime(a.created_at)}</span> <span class="muted" style="font-size:12px">${ago(a.created_at)}</span></td>
+          <td>${pill(a.severity)}</td>
+          <td class="cat">${esc(a.attack_category || '—')}</td>
+          <td class="mono">${esc(a.src_ip)} → ${esc(a.dst_ip)}</td>
+          <td class="mono">${esc(a.protocol)}/${esc(a.service)}</td>
+          <td>${scoreBar(a.threat_score, a.severity)}</td>
+          <td>${statusPill(a.status)}</td>
+          <td class="secondary" style="font-size:12px">${a.reviewed_by ? `${esc(a.reviewed_by)} · ${ago(a.reviewed_at)}` : '—'}</td>
+          <td class="muted" style="font-size:12px">${esc(a.email_status)}</td>
+          <td style="text-align:right">${a.status === 'open'
+            ? `<button class="btn sm" data-dismiss-alert="${a.id}">Dismiss</button> <button class="btn sm primary" data-ack-alert="${a.id}">Acknowledge</button>`
+            : `<button class="btn sm" data-reopen="${a.id}">Reopen</button>`}</td>
+        </tr>`).join('')
+        : `<tr><td colspan="11" class="empty"><strong>${st.status === 'open' ? 'All clear' : 'No alerts here'}</strong>${st.status === 'open' ? 'There are no open alerts right now.' : 'No alerts match this view.'}</td></tr>`;
+      $('#pageInfo').textContent = `${fmtNum(r.total)} alert${r.total === 1 ? '' : 's'}`;
+      $('#pageNum').textContent = `${r.page} / ${Math.max(r.pages, 1)}`;
+      $('#prevBtn').disabled = r.page <= 1;
+      $('#nextBtn').disabled = r.page >= r.pages;
+    } catch (e) {
+      $('#rows').innerHTML = `<tr><td colspan="11" class="empty"><strong>Couldn't load alerts</strong>${esc(e.message)}</td></tr>`;
+    }
+  }
+  document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x === b));
+    st.status = b.dataset.status; st.page = 1; load();
+  }));
+  $('#sev').addEventListener('change', () => { st.page = 1; load(); });
+  $('#prevBtn').addEventListener('click', () => { st.page--; load(); });
+  $('#nextBtn').addEventListener('click', () => { st.page++; load(); });
+  $('#rows').addEventListener('click', async (e) => {
+    const re = e.target.closest('[data-reopen]');
+    if (re) {
+      e.stopPropagation();
+      try { await TW.alertAction(re.dataset.reopen, 'reopen'); toast(`Alert #${re.dataset.reopen} reopened.`); } catch (err) { toast(err.message, true); }
+      return;
+    }
+    if (e.target.closest('button')) return;
+    const tr = e.target.closest('tr[data-log]'); if (tr) openLog(tr.dataset.log);
+  });
+  $('#ackAll').addEventListener('click', async () => {
+    const sev = $('#sev').value;
+    if (!confirmInline()) return;
+    try {
+      const r = await api('/api/alerts/acknowledge-all', { method: 'POST', body: sev ? { severity: sev } : {} });
+      toast(`${fmtNum(r.acknowledged)} alerts acknowledged.`); load();
+    } catch (err) { toast(err.message, true); }
+  });
+  // two-click confirm (avoids a blocking browser dialog)
+  let armed = 0;
+  function confirmInline() {
+    const b = $('#ackAll');
+    if (Date.now() - armed < 3000) { b.textContent = 'Acknowledge all open'; armed = 0; return true; }
+    armed = Date.now(); b.textContent = 'Click again to confirm';
+    setTimeout(() => { if (armed && Date.now() - armed >= 3000) { b.textContent = 'Acknowledge all open'; armed = 0; } }, 3100);
+    return false;
+  }
+  document.addEventListener('tw:alert-changed', load);
+  load();
+  setInterval(load, 6000);
+})();
+</script>
+{% endblock %}
