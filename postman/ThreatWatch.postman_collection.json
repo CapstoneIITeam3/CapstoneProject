@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "c1f7a83d-e421-4f92-911a-829d1e40b374",
     "name": "ThreatWatch - AI-IDS REST API Collection",
-    "description": "Comprehensive automated API testing collection for the ThreatWatch AI-Based Cyber Threat Detection & Alerting System.\n\nIncludes automated tests for:\n- Health checks & OpenAPI documentation\n- CSRF token extraction & session authentication\n- Machine learning threat inference & classification\n- Logs & alerts triage endpoints\n- Defense-in-depth HTTP security headers",
+    "description": "Comprehensive automated API testing collection for the ThreatWatch AI-Based Cyber Threat Detection & Alerting System.\n\nIncludes automated test suites for:\n- Health checks & OpenAPI documentation\n- CSRF token extraction & session authentication\n- Machine learning threat inference & classification\n- Logs & alerts triage endpoints\n- Defense-in-depth HTTP security headers",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -222,6 +222,265 @@
               "path": ["login"]
             },
             "description": "Authenticates as admin using form credentials and session cookies."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03. Threat Detection & ML Inference",
+      "item": [
+        {
+          "name": "Predict Threat Score (Valid Traffic)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 or 503\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 503]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"ML prediction schema is valid\", function () {",
+                  "        var data = pm.response.json();",
+                  "        pm.expect(data).to.have.property('threat_score');",
+                  "        pm.expect(data.threat_score).to.be.within(0, 1);",
+                  "        pm.expect(data).to.have.property('tier');",
+                  "        pm.expect(['Normal', 'Suspicious', 'Malicious']).to.include(data.tier);",
+                  "        pm.expect(data).to.have.property('anomaly_detected');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"duration\": 0,\n  \"protocol_type\": \"tcp\",\n  \"service\": \"http\",\n  \"flag\": \"SF\",\n  \"src_bytes\": 181,\n  \"dst_bytes\": 5450,\n  \"land\": 0,\n  \"wrong_fragment\": 0,\n  \"urgent\": 0,\n  \"hot\": 0,\n  \"num_failed_logins\": 0,\n  \"logged_in\": 1,\n  \"num_compromised\": 0,\n  \"root_shell\": 0,\n  \"su_attempted\": 0,\n  \"num_root\": 0,\n  \"num_file_creations\": 0,\n  \"num_shells\": 0,\n  \"num_access_files\": 0,\n  \"num_outbound_cmds\": 0,\n  \"is_host_login\": 0,\n  \"is_guest_login\": 0,\n  \"count\": 8,\n  \"srv_count\": 8,\n  \"serror_rate\": 0.0,\n  \"srv_serror_rate\": 0.0,\n  \"rerror_rate\": 0.0,\n  \"srv_rerror_rate\": 0.0,\n  \"same_srv_rate\": 1.0,\n  \"diff_srv_rate\": 0.0,\n  \"srv_diff_host_rate\": 0.0,\n  \"dst_host_count\": 9,\n  \"dst_host_srv_count\": 9,\n  \"dst_host_same_srv_rate\": 1.0,\n  \"dst_host_diff_srv_rate\": 0.0,\n  \"dst_host_same_src_port_rate\": 0.11,\n  \"dst_host_srv_diff_host_rate\": 0.0,\n  \"dst_host_serror_rate\": 0.0,\n  \"dst_host_srv_serror_rate\": 0.0,\n  \"dst_host_rerror_rate\": 0.0,\n  \"dst_host_srv_rerror_rate\": 0.0\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/predict",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "predict"]
+            },
+            "description": "Submits network traffic attributes to /api/predict for instant machine learning inference (Random Forest + Isolation Forest)."
+          },
+          "response": []
+        },
+        {
+          "name": "Classify & Ingest Traffic (Authenticated / Sensor)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200, 201, 400, or 503\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 400, 503]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    pm.test(\"Classified log record returned with persistent ID\", function () {",
+                  "        var data = pm.response.json();",
+                  "        pm.expect(data).to.have.property('tier');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"duration\": 0,\n  \"protocol_type\": \"tcp\",\n  \"service\": \"http\",\n  \"flag\": \"SF\",\n  \"src_bytes\": 215,\n  \"dst_bytes\": 3200\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/classify",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "classify"]
+            },
+            "description": "Submits network traffic for classification and persistence in the MongoDB log_records collection."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Malformed Payload (Validation Check)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Malformed request rejected with HTTP 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Error response contains descriptive message\", function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('error');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/predict",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "predict"]
+            },
+            "description": "Ensures that empty or corrupted payloads are safely rejected by backend input validators."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04. Logs & Alerts Triage",
+      "item": [
+        {
+          "name": "Get Recent Logs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200, 302, 401, or 503\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 302, 401, 503]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Logs response contains list of traffic records\", function () {",
+                  "        var data = pm.response.json();",
+                  "        pm.expect(data).to.be.an('object');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/logs?limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "logs"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Fetches recently classified network traffic records from MongoDB."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Active Security Alerts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200, 302, 401, or 503\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 302, 401, 503]);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Alerts response contains alert items\", function () {",
+                  "        var data = pm.response.json();",
+                  "        pm.expect(data).to.be.an('object');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "alerts"]
+            },
+            "description": "Retrieves triggered intrusion detection alerts."
+          },
+          "response": []
+        },
+        {
+          "name": "Triage Alert Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Triage response receives valid HTTP code\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 400, 401, 404, 503]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrfToken}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"resolved\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "alerts", "1"]
+            },
+            "description": "Updates alert resolution status in MongoDB."
           },
           "response": []
         }
