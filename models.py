@@ -96,8 +96,37 @@ class MongoUser(UserMixin):
         }
 
 
-def create_user(username, password, email=None, role="admin"):
+def validate_password(password):
+    """Enforce NIST/OWASP password strength standards.
+
+    Requirements:
+      - Minimum 8 characters, maximum 128 characters
+      - At least one uppercase letter (A-Z)
+      - At least one lowercase letter (a-z)
+      - At least one numeric digit (0-9)
+      - At least one special character (!@#$%^&*(),.?":{}|<>_-+=~)
+    """
+    if not password or not isinstance(password, str):
+        raise ValueError("Password must be a non-empty string.")
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters long.")
+    if len(password) > 128:
+        raise ValueError("Password cannot exceed 128 characters.")
+    if not any(c.isupper() for c in password):
+        raise ValueError("Password must contain at least one uppercase letter (A-Z).")
+    if not any(c.islower() for c in password):
+        raise ValueError("Password must contain at least one lowercase letter (a-z).")
+    if not any(c.isdigit() for c in password):
+        raise ValueError("Password must contain at least one numeric digit (0-9).")
+    special_chars = set("!@#$%^&*(),.?\":{}|<>_-+=~`[]/\\';")
+    if not any(c in special_chars for c in password):
+        raise ValueError("Password must contain at least one special character (!@#$%^&*).")
+
+
+def create_user(username, password, email=None, role="admin", enforce_policy=False):
     """Create a new user document in MongoDB with bcrypt hashed password."""
+    if enforce_policy:
+        validate_password(password)
     pw_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     doc = {
         "username": username.strip(),
@@ -150,8 +179,10 @@ def check_password(user, raw_password):
         return False
 
 
-def set_password(user_id, new_password):
-    """Update user's password hash in MongoDB."""
+def set_password(user_id, new_password, enforce_policy=True):
+    """Update user's password hash in MongoDB with policy enforcement."""
+    if enforce_policy:
+        validate_password(new_password)
     pw_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     oid = ObjectId(user_id) if not isinstance(user_id, ObjectId) else user_id
     users_col.update_one({"_id": oid}, {"$set": {"password_hash": pw_hash}})

@@ -74,6 +74,8 @@ class ValidationError(ValueError):
 
 def validate(record: dict) -> dict:
     """Reject malformed / out-of-range records (SRS §3.2.1). Returns a clean feature dict."""
+    import math
+
     if not isinstance(record, dict):
         raise ValidationError("Request body must be a JSON object.")
     missing = [f for f in REQUIRED_FIELDS if record.get(f) in (None, "")]
@@ -83,13 +85,17 @@ def validate(record: dict) -> dict:
     for f in NSL_KDD_FEATURES:
         v = record.get(f, 0 if f not in CATEGORICAL else "")
         if f in CATEGORICAL:
-            v = str(v).strip().lower() if f == "protocol_type" else str(v).strip()
-            clean[f] = v
+            s_val = str(v).replace("\x00", "").strip()
+            if len(s_val) > 64:
+                raise ValidationError(f"Field '{f}' exceeds maximum permitted length of 64 characters.")
+            clean[f] = s_val.lower() if f == "protocol_type" else s_val
             continue
         try:
             v = float(v)
         except (TypeError, ValueError):
             raise ValidationError(f"Field '{f}' must be a number.")
+        if math.isnan(v) or math.isinf(v):
+            raise ValidationError(f"Field '{f}' cannot be NaN or Infinite.")
         if v < 0:
             raise ValidationError(f"Field '{f}' cannot be negative.")
         if f.endswith("_rate") and v > 1:
