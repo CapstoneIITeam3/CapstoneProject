@@ -65,6 +65,7 @@ from models import (
     create_user,
     find_alert_by_id,
     find_log_by_id,
+    find_or_create_firebase_user,
     find_user,
     find_user_by_id,
     get_next_sequence,
@@ -186,6 +187,9 @@ def check_csrf():
             return
         # Allow internal predict API if explicitly called without UI session
         if request.path == "/api/predict" and not request.cookies.get("session"):
+            return
+        # Firebase authentication uses signed Google ID tokens with built-in replay protection
+        if request.path == "/api/auth/firebase-login":
             return
         sent = request.headers.get("X-CSRF-Token") or request.form.get("_csrf")
         if not sent or not secrets.compare_digest(sent, session.get("_csrf", "")):
@@ -461,6 +465,74 @@ def logout():
     logout_user()
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.route("/api/auth/firebase-login", methods=["POST"])
+@limiter.limit("15 per minute")
+def api_firebase_login():
+    """Verify Firebase ID token (JWT) and authenticate user session into MongoDB.
+
+    Expects JSON payload: { "idToken": "<firebase_id_token>" }
+    Returns JSON: { "success": True, "redirect": "/", "user": { ... } }
+    """
+    if not is_firebase_configured():
+        return jsonify(error="Firebase Authentication is not configured on the server"), 503
+
+    payload = request.get_json(silent=True) or {}
+    token = payload.get("idToken")
+    if not token or not isinstance(token, str):
+        return jsonify(error="Missing or invalid idToken in request payload"), 400
+
+    try:
+        # Cryptographically verify Firebase ID token using Google's public certs
+        decoded = google_id_token.verify_firebase_token(
+            token,
+            google_requests.Request(),
+            audience=FIREBASE_PROJECT_ID,
+        )
+    except Exception as exc:
+        log.warning("Firebase ID token verification failed: %s", exc)
+        return jsonify(error=f"Invalid or expired Firebase token: {exc}"), 401
+
+    email = decoded.get("email")
+    if not email:
+        return jsonify(error="Token does not contain a verified email address"), 400
+
+    # Whitelist domain validation if ALLOWED_DOMAINS is configured
+    if ALLOWED_DOMAINS:
+        email_domain = email.split("@")[-1].lower()
+        if email_domain not in ALLOWED_DOMAINS:
+            return jsonify(error=f"Domain @{email_domain} is not authorized to access this system"), 403
+
+    uid = decoded.get("sub") or decoded.get("user_id")
+    name = decoded.get("name")
+
+    try:
+        user = find_or_create_firebase_user(
+            email=email,
+            uid=uid,
+            display_name=name,
+            role="admin",
+        )
+    except Exception as exc:
+        log.error("Failed to provision/sync Firebase user in MongoDB: %s", exc)
+        return jsonify(error="Database error while provisioning user account"), 500
+
+    # Establish secure Flask session
+    session.clear()
+    session.permanent = True
+    login_user(user)
+    csrf_token()
+
+    # Audit logging
+    provider = decoded.get("firebase", {}).get("sign_in_provider", "firebase")
+    audit("firebase_login", f"{user.username} authenticated via Firebase ({provider}) from {request.remote_addr}", user.id)
+
+    return jsonify(
+        success=True,
+        redirect=url_for("dashboard"),
+        user=user.to_dict(),
+    ), 200
 
 
 # ---------------------------------------------------------------- Web Pages

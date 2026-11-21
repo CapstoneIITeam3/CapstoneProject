@@ -188,6 +188,59 @@ def set_password(user_id, new_password, enforce_policy=True):
     users_col.update_one({"_id": oid}, {"$set": {"password_hash": pw_hash}})
 
 
+def find_or_create_firebase_user(email, uid=None, display_name=None, role="admin"):
+    """Find an existing user by email or create a new user provisioned via Firebase.
+
+    Links Firebase UID, updates last login timestamp, and securely provisions new
+    analyst/admin accounts in the MongoDB users collection.
+    """
+    if not email:
+        raise ValueError("A valid email is required to provision a Firebase user.")
+
+    clean_email = email.strip().lower()
+    existing = users_col.find_one({"email": clean_email})
+    if existing:
+        updates = {"last_login": utcnow()}
+        if uid and not existing.get("firebase_uid"):
+            updates["firebase_uid"] = uid
+        if not existing.get("auth_provider"):
+            updates["auth_provider"] = "firebase"
+        users_col.update_one({"_id": existing["_id"]}, {"$set": updates})
+        existing.update(updates)
+        return MongoUser(existing)
+
+    # Derive unique username
+    base_username = (
+        display_name.strip().replace(" ", "_").lower()
+        if display_name and display_name.strip()
+        else clean_email.split("@")[0]
+    )
+    sanitized_username = "".join(c for c in base_username if c.isalnum() or c in ("_", "-"))[:30] or "user"
+    candidate = sanitized_username
+    counter = 1
+    while users_col.find_one({"username": candidate}):
+        candidate = f"{sanitized_username}_{counter}"
+        counter += 1
+
+    # High-entropy random password so account cannot be accessed via basic password unless explicitly set
+    random_pw = secrets.token_urlsafe(32)
+    pw_hash = bcrypt.hashpw(random_pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+    doc = {
+        "username": candidate,
+        "password_hash": pw_hash,
+        "email": clean_email,
+        "role": role,
+        "firebase_uid": uid,
+        "auth_provider": "firebase",
+        "created_at": utcnow(),
+        "last_login": utcnow(),
+    }
+    result = users_col.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return MongoUser(doc)
+
+
 # ---------------------------------------------------------------- System Settings
 DEFAULT_SETTINGS = {
     "malicious_threshold": "0.50",
