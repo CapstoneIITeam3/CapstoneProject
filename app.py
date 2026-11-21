@@ -40,6 +40,8 @@ from flask_login import (
 from flasgger import Swagger
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
 
 import simulator
@@ -111,6 +113,42 @@ limiter = Limiter(
     strategy="fixed-window",
 )
 
+# ---------------------------------------------------------------- Firebase Authentication (OAuth & Password Recovery)
+FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "threatwatch-a41a0").strip()
+FIREBASE_API_KEY = os.environ.get("FIREBASE_API_KEY", "").strip()
+FIREBASE_AUTH_DOMAIN = os.environ.get("FIREBASE_AUTH_DOMAIN", f"{FIREBASE_PROJECT_ID}.firebaseapp.com").strip()
+FIREBASE_STORAGE_BUCKET = os.environ.get("FIREBASE_STORAGE_BUCKET", f"{FIREBASE_PROJECT_ID}.firebasestorage.app").strip()
+FIREBASE_MESSAGING_SENDER_ID = os.environ.get("FIREBASE_MESSAGING_SENDER_ID", "").strip()
+FIREBASE_APP_ID = os.environ.get("FIREBASE_APP_ID", "").strip()
+FIREBASE_MEASUREMENT_ID = os.environ.get("FIREBASE_MEASUREMENT_ID", "").strip()
+ALLOWED_DOMAINS = [
+    d.strip().lower()
+    for d in os.environ.get("ALLOWED_DOMAINS", "").split(",")
+    if d.strip()
+]
+
+
+def is_firebase_configured():
+    """Return True if Firebase project ID and API key are configured in the environment."""
+    return bool(FIREBASE_PROJECT_ID and FIREBASE_API_KEY)
+
+
+@app.context_processor
+def inject_firebase_context():
+    """Inject Firebase configuration and status globally into all Jinja templates."""
+    return {
+        "firebase_enabled": is_firebase_configured(),
+        "firebase_config": {
+            "apiKey": FIREBASE_API_KEY,
+            "authDomain": FIREBASE_AUTH_DOMAIN,
+            "projectId": FIREBASE_PROJECT_ID,
+            "storageBucket": FIREBASE_STORAGE_BUCKET,
+            "messagingSenderId": FIREBASE_MESSAGING_SENDER_ID,
+            "appId": FIREBASE_APP_ID,
+            "measurementId": FIREBASE_MEASUREMENT_ID,
+        },
+    }
+
 
 @login_manager.user_loader
 def load_user(uid):
@@ -171,14 +209,15 @@ def add_security_headers(response):
     if os.environ.get("HTTPS", "0") == "1":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
-    # CSP for dashboard assets (Google Fonts, local styles/scripts, Chart.js, inline SVG/data URIs)
+    # CSP for dashboard assets (Google Fonts, local styles/scripts, Chart.js, inline SVG/data URIs, Firebase SDK & Google APIs)
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
+        "script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com data:; "
         "img-src 'self' data: https:; "
-        "connect-src 'self';"
+        "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; "
+        "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com;"
     )
     return response
 
