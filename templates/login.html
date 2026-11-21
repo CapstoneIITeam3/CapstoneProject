@@ -71,6 +71,27 @@
     .foot b { color: var(--text-2); font-weight: 500; }
     .legal { font-size: 11.5px; color: var(--text-3); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
+    /* ---------------- Google & Firebase UI ---------------- */
+    .google-btn { width: 100%; height: 42px; margin-top: 14px; border-radius: 9px; font: inherit; font-weight: 500; font-size: 13.5px;
+      cursor: pointer; border: 1px solid var(--line-2); background: #0e0e12; color: var(--text); display: flex; align-items: center; justify-content: center;
+      gap: 10px; transition: background .2s, border-color .2s, transform .1s; }
+    .google-btn:hover { background: #18171f; border-color: #3e3b48; }
+    .google-btn:active { transform: translateY(1px); }
+    .google-btn:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
+    .status-msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 12.5px; display: none; }
+    .status-msg.ok { display: flex; gap: 8px; align-items: center; color: #3ddc84; background: rgba(61,220,132,.08); border: 1px solid rgba(61,220,132,.25); }
+    .status-msg.err { display: flex; gap: 8px; align-items: center; color: var(--danger); background: rgba(255,92,108,.08); border: 1px solid rgba(255,92,108,.25); }
+
+    /* Modal Backdrop for Password Recovery */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.75); backdrop-filter: blur(5px);
+      display: none; align-items: center; justify-content: center; z-index: 999; }
+    .modal-box { background: #0c0c10; border: 1px solid var(--line-2); border-radius: 14px; padding: 26px 28px; width: 90%; max-width: 380px;
+      box-shadow: 0 16px 44px rgba(0,0,0,.9); position: relative; }
+    .modal-box h2 { margin: 0 0 6px; font-size: 18px; font-weight: 500; }
+    .modal-box p { margin: 0 0 18px; font-size: 12.5px; color: var(--text-2); line-height: 1.45; }
+    .modal-close { position: absolute; top: 18px; right: 18px; background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 18px; }
+    .modal-close:hover { color: var(--text); }
+
     /* ---------------- right: showcase ---------------- */
     .show { position: relative; overflow: hidden; border-radius: 0 18px 18px 0; border: 1px solid #161616; border-left: 0;
       background: linear-gradient(180deg, #000 0%, #05030a 38%, #120a24 72%, #1d0d33 100%);
@@ -158,7 +179,20 @@
           Restricted to authorised security administrators.
         </div>
 
+        {% if firebase_enabled %}
+        <button type="button" class="google-btn anim" id="googleSignInBtn" style="animation-delay:.40s">
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.616z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+            <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
+            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"/>
+          </svg>
+          <span>Sign in with Google</span>
+        </button>
+        <div class="divider anim" style="animation-delay:.45s">OR SIGN IN WITH PASSWORD</div>
+        {% else %}
         <div class="divider anim" style="animation-delay:.42s">ADMIN SIGN-IN</div>
+        {% endif %}
 
         <div class="anim" style="animation-delay:.5s">
           <label for="username">Username</label>
@@ -185,6 +219,8 @@
           {{ error }}
         </div>
         {% endif %}
+
+        <div id="authStatusMsg" class="status-msg"></div>
 
         <p class="foot anim" style="animation-delay:.74s">No account? <b>Ask your administrator</b> for access.</p>
       </form>
@@ -302,6 +338,25 @@
   </section>
 </div>
 
+<!-- Password Reset Modal Dialog -->
+<div class="modal-backdrop" id="forgotModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="modalCloseBtn" aria-label="Close dialog">&times;</button>
+    <h2 id="modalTitle">Reset Password</h2>
+    <p>Enter your registered administrator email address. We will dispatch an automated password recovery link directly to your inbox via Firebase.</p>
+    <div class="field" style="margin-bottom:14px;">
+      <input type="email" id="resetEmail" placeholder="your.name@niituniversity.in" autocomplete="email">
+    </div>
+    <button type="button" class="submit" id="sendResetBtn" style="width:100%; margin-top:0;">Send Reset Link</button>
+    <div id="modalStatusMsg" class="status-msg" style="margin-top:12px;"></div>
+  </div>
+</div>
+
+{% if firebase_enabled %}
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+{% endif %}
+
 <script>
 (() => {
   const u = document.getElementById('username'), p = document.getElementById('password'), btn = document.getElementById('submitBtn');
@@ -322,10 +377,130 @@
     p.focus();
   });
 
-  const fb = document.getElementById('forgotBtn'), hint = document.getElementById('forgotHint');
-  fb.addEventListener('click', () => { hint.hidden = !hint.hidden; fb.setAttribute('aria-expanded', String(!hint.hidden)); });
+  // Password Recovery Modal handlers
+  const fb = document.getElementById('forgotBtn');
+  const modal = document.getElementById('forgotModal');
+  const modalClose = document.getElementById('modalCloseBtn');
+  const sendReset = document.getElementById('sendResetBtn');
+  const resetEmail = document.getElementById('resetEmail');
+  const modalStatus = document.getElementById('modalStatusMsg');
+
+  if (fb && modal) {
+    fb.addEventListener('click', (e) => {
+      e.preventDefault();
+      modal.style.display = 'flex';
+      if (resetEmail) resetEmail.focus();
+    });
+    if (modalClose) {
+      modalClose.addEventListener('click', () => {
+        modal.style.display = 'none';
+        if (modalStatus) modalStatus.style.display = 'none';
+      });
+    }
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.style.display = 'none';
+        if (modalStatus) modalStatus.style.display = 'none';
+      }
+    });
+  }
 
   document.getElementById('loginForm').addEventListener('submit', () => { btn.disabled = true; btn.textContent = 'Logging in…'; });
+
+  // Initialize Firebase client SDK
+  const fbConfig = {{ firebase_config | tojson }};
+  let firebaseAuth = null;
+  if (window.firebase && fbConfig && fbConfig.apiKey) {
+    try {
+      if (!firebase.apps.length) {
+        firebase.initializeApp(fbConfig);
+      }
+      firebaseAuth = firebase.auth();
+    } catch (e) {
+      console.warn("Firebase initialization notice:", e);
+    }
+  }
+
+  // Google Sign-In Popup handler
+  const googleBtn = document.getElementById('googleSignInBtn');
+  const authStatus = document.getElementById('authStatusMsg');
+  if (googleBtn && firebaseAuth) {
+    googleBtn.addEventListener('click', async () => {
+      googleBtn.disabled = true;
+      googleBtn.style.opacity = '0.7';
+      if (authStatus) authStatus.style.display = 'none';
+      try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        provider.addScope('email');
+        provider.addScope('profile');
+        const result = await firebaseAuth.signInWithPopup(provider);
+        const idToken = await result.user.getIdToken();
+
+        // Exchange Firebase ID Token with Flask backend
+        const res = await fetch('/api/auth/firebase-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken: idToken })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          window.location.href = data.redirect || '/';
+        } else {
+          if (authStatus) {
+            authStatus.className = 'status-msg err';
+            authStatus.textContent = data.error || 'Authentication failed. Please contact administrator.';
+            authStatus.style.display = 'flex';
+          }
+          googleBtn.disabled = false;
+          googleBtn.style.opacity = '1';
+        }
+      } catch (err) {
+        if (err.code !== 'auth/popup-closed-by-user') {
+          if (authStatus) {
+            authStatus.className = 'status-msg err';
+            authStatus.textContent = err.message || 'Google sign-in error occurred.';
+            authStatus.style.display = 'flex';
+          }
+        }
+        googleBtn.disabled = false;
+        googleBtn.style.opacity = '1';
+      }
+    });
+  }
+
+  // Firebase automated password recovery
+  if (sendReset && firebaseAuth) {
+    sendReset.addEventListener('click', async () => {
+      const email = (resetEmail ? resetEmail.value : '').trim();
+      if (!email || !email.includes('@')) {
+        modalStatus.className = 'status-msg err';
+        modalStatus.textContent = 'Please enter a valid email address.';
+        modalStatus.style.display = 'flex';
+        return;
+      }
+      sendReset.disabled = true;
+      sendReset.textContent = 'Sending link…';
+      try {
+        await firebaseAuth.sendPasswordResetEmail(email);
+        modalStatus.className = 'status-msg ok';
+        modalStatus.textContent = 'Password reset email sent! Check your inbox.';
+        modalStatus.style.display = 'flex';
+        sendReset.textContent = 'Link Sent!';
+        setTimeout(() => {
+          modal.style.display = 'none';
+          modalStatus.style.display = 'none';
+          sendReset.disabled = false;
+          sendReset.textContent = 'Send Reset Link';
+        }, 3500);
+      } catch (err) {
+        modalStatus.className = 'status-msg err';
+        modalStatus.textContent = err.message || 'Unable to send reset email.';
+        modalStatus.style.display = 'flex';
+        sendReset.disabled = false;
+        sendReset.textContent = 'Send Reset Link';
+      }
+    });
+  }
 
   // robot image: fall back to the vector robot if the hosted PNG can't load (offline demo, blocked CDN)
   const img = document.getElementById('robotImg'), fallback = document.getElementById('robotFallback');
