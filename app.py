@@ -146,6 +146,33 @@ def check_csrf():
             abort(400, "Invalid or missing CSRF token — reload the page and try again.")
 
 
+# ---------------------------------------------------------------- HTTP Security Headers
+@app.after_request
+def add_security_headers(response):
+    """Enforce defense-in-depth HTTP security headers (OWASP recommended)."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = (
+        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
+        "magnetometer=(), microphone=(), payment=(), usb=()"
+    )
+    if os.environ.get("HTTPS", "0") == "1":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+    # CSP for dashboard assets (Google Fonts, local styles/scripts, Chart.js, inline SVG/data URIs)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com data:; "
+        "img-src 'self' data: https:; "
+        "connect-src 'self';"
+    )
+    return response
+
+
 # ---------------------------------------------------------------- Pipeline: Ingest -> Classify -> Persist -> Alert
 _ingest_lock = threading.Lock()
 
