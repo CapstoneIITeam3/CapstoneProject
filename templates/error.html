@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Error {{ code }} · ThreatWatch</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27><path fill=%27%233987e5%27 d=%27M12 2 3 6v6c0 5 3.8 9.7 9 10 5.2-.3 9-5 9-10V6z%27/></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-card" style="text-align:center">
+    <div style="font-size:42px;font-weight:700;color:var(--text-muted)">{{ code }}</div>
+    <p style="font-size:15px;margin:8px 0 22px">{{ message }}</p>
+    <a class="btn primary" href="{{ url_for('dashboard') }}" style="display:inline-flex">Back to dashboard</a>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div><h1>Settings</h1><div class="sub">Detection sensitivity, alerting and replay · every change is written to the audit log</div></div>
+</div>
+
+<div class="settings-grid">
+  <form class="card" method="post" id="settingsForm">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <h2>Detection thresholds</h2>
+    <div class="sub" style="margin-bottom:12px">Applied to the Random Forest attack probability (0–1). Lower thresholds catch more attacks (higher recall) but raise more false alarms.</div>
+
+    <div class="thr-visual" id="thrVis">
+      <div id="vN" style="background:#0ca30c">Normal</div>
+      <div id="vS" style="background:#fab219">Suspicious</div>
+      <div id="vM" style="background:#d03b3b;color:#fff">Malicious</div>
+    </div>
+    <div class="thr-scale"><span>0.0</span><span>0.25</span><span>0.5</span><span>0.75</span><span>1.0</span></div>
+
+    <div class="form-grid" style="grid-template-columns:1fr 1fr;margin:16px 0">
+      <label class="field">Suspicious threshold (score ≥)
+        <input type="number" name="suspicious_threshold" id="tS" min="0.01" max="0.99" step="0.01" value="{{ s.suspicious_threshold }}" required>
+        <input type="range" id="rS" min="0.01" max="0.99" step="0.01" value="{{ s.suspicious_threshold }}" aria-label="Suspicious threshold slider">
+      </label>
+      <label class="field">Malicious threshold (score ≥)
+        <input type="number" name="malicious_threshold" id="tM" min="0.02" max="1" step="0.01" value="{{ s.malicious_threshold }}" required>
+        <input type="range" id="rM" min="0.02" max="1" step="0.01" value="{{ s.malicious_threshold }}" aria-label="Malicious threshold slider">
+      </label>
+    </div>
+    <div class="field-err" id="thrErr"></div>
+
+    <div class="switch-row">
+      <input type="checkbox" id="iff" name="use_anomaly_flag" {{ 'checked' if s.use_anomaly_flag }}>
+      <div><label for="iff">Isolation Forest outliers count as Suspicious</label><p>The hybrid rule: if the Isolation Forest calls a record an outlier, it is at least Suspicious even when the Random Forest score is low. This catches attack types the RF never saw in training. Defaults (0.20 / 0.50 / on) reproduce the ML module's own <span class="mono">predict()</span>.</p></div>
+    </div>
+    <div class="switch-row">
+      <input type="checkbox" id="aos" name="alert_on_suspicious" {{ 'checked' if s.alert_on_suspicious }}>
+      <div><label for="aos">Raise alerts for Suspicious records</label><p>Malicious records always raise an alert. Turn this off to reduce alert volume.</p></div>
+    </div>
+    <div class="switch-row">
+      <input type="checkbox" id="em" name="email_alerts" {{ 'checked' if s.email_alerts }}>
+      <div><label for="em">E-mail notifications for Malicious alerts</label>
+        <p>{% if smtp %}SMTP is configured.{% else %}<span style="color:var(--warning)">SMTP isn't configured</span> — set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD and ALERT_EMAIL_TO, then restart. The on-screen banner works regardless.{% endif %}</p></div>
+    </div>
+    <div class="switch-row">
+      <input type="checkbox" id="rep" name="replay_enabled" {{ 'checked' if s.replay_enabled }}>
+      <div style="flex:1"><label for="rep">Replay mode (stream records into the pipeline)</label>
+        <p>Source: <b>{{ replay_file.replace('\\', '/').split('/')[-1] if replay_file else 'synthetic NSL-KDD-style traffic (no dataset file in data/)' }}</b></p>
+        <label class="field" style="margin-top:8px;max-width:220px">Interval between ticks (seconds)
+          <input type="number" name="replay_interval" min="0.5" max="60" step="0.5" value="{{ s.replay_interval }}">
+        </label>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;padding-top:12px;border-top:1px solid var(--surface-3)">
+      <button class="btn primary" type="submit">Save settings</button>
+    </div>
+  </form>
+
+  <div class="grid" style="gap:16px">
+    <form class="card" method="post">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="reload_models">
+      <div class="card-head">
+        <div><h2>Detection engine</h2><div class="sub">
+          {% if det.team_module %}Team ML module: <span class="mono">{{ det.team_module }}</span>
+          {% else %}No <span class="mono">ml/</span> module found. Using <span class="mono">ml_models/</span> or the demo heuristic.{% endif %}</div></div>
+        <span class="chip {{ '' if det.real else 'warn' }}">{{ det.mode }}</span>
+      </div>
+      {% if det.error %}<div class="flash error">{{ det.error }}</div>{% endif %}
+      <table class="data" style="margin-bottom:12px">
+        <tbody>
+          <tr style="cursor:default"><td>Random Forest</td><td class="mono">{{ 'ml/rf_model.pkl' if det.team_module else 'random_forest.joblib' }}</td><td>{{ '✓ loaded' if det.random_forest else '— not found' }}</td></tr>
+          <tr style="cursor:default"><td>Isolation Forest</td><td class="mono">{{ 'ml/iso_model.pkl' if det.team_module else 'isolation_forest.joblib' }}</td><td>{{ '✓ loaded' if det.isolation_forest else '— not found' }}</td></tr>
+          <tr style="cursor:default"><td>Replay data</td><td class="mono" style="white-space:normal">{{ replay_file or 'synthetic traffic' }}</td><td>{{ '✓ real dataset' if replay_file else '— no dataset file' }}</td></tr>
+        </tbody>
+      </table>
+      {% if metrics %}
+      <p class="section-label" style="margin-top:4px">Offline results from the ML team (results/metrics.md)</p>
+      <div class="table-wrap" style="margin-bottom:12px">
+        <table class="data"><thead><tr>{% for h in metrics.header %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+          <tbody>{% for r in metrics.rows %}<tr style="cursor:default">{% for c in r %}<td class="{{ 'mono' if not loop.first }}">{{ c }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+        </table>
+      </div>
+      {% endif %}
+      <button class="btn" type="submit">Reload models</button>
+    </form>
+
+    <div class="card">
+      <div class="card-head"><div><h2>Audit log</h2><div class="sub">Latest 50 administrative actions</div></div></div>
+      <div class="table-wrap" style="max-height:420px;overflow-y:auto">
+        <table class="data">
+          <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
+          <tbody>
+          {% for a in audit_rows %}
+            <tr style="cursor:default">
+              <td class="mono" data-ts="{{ iso(a.timestamp) }}">{{ a.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+              <td>{{ a.user.username if a.user else 'system' }}</td>
+              <td class="mono">{{ a.action }}</td>
+              <td class="secondary" style="white-space:normal;font-size:12.5px">{{ a.details }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="4" class="empty">No actions recorded yet.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(() => {
+  const $ = TW.$;
+  const tS = $('#tS'), tM = $('#tM'), rS = $('#rS'), rM = $('#rM');
+  function draw() {
+    const s = +tS.value, m = +tM.value;
+    $('#vN').style.width = `${s * 100}%`;
+    $('#vS').style.width = `${Math.max(0, m - s) * 100}%`;
+    $('#vM').style.width = `${Math.max(0, 1 - m) * 100}%`;
+    const bad = !(s > 0 && s < m && m <= 1);
+    $('#thrErr').textContent = bad ? 'Suspicious threshold must be lower than the malicious threshold (both between 0 and 1).' : '';
+    tS.classList.toggle('invalid', bad); tM.classList.toggle('invalid', bad);
+    return !bad;
+  }
+  [[tS, rS], [tM, rM]].forEach(([num, rng]) => {
+    num.addEventListener('input', () => { rng.value = num.value; draw(); });
+    rng.addEventListener('input', () => { num.value = (+rng.value).toFixed(2); draw(); });
+  });
+  $('#settingsForm').addEventListener('submit', (e) => { if (!draw()) e.preventDefault(); });
+  document.querySelectorAll('[data-ts]').forEach((el) => (el.textContent = TW.fmtDateTime(el.dataset.ts)));
+  draw();
+})();
+</script>
+{% endblock %}
