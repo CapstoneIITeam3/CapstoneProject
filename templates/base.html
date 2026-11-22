@@ -27,12 +27,14 @@
     <a href="{{ url_for('dashboard') }}" class="{{ 'active' if page == 'dashboard' }}">Dashboard</a>
     <a href="{{ url_for('logs_page') }}" class="{{ 'active' if page == 'logs' }}">Logs</a>
     <a href="{{ url_for('alerts_page') }}" class="{{ 'active' if page == 'alerts' }}">Alerts<span class="nav-badge" id="navAlertCount" hidden>0</span></a>
+    {% if current_user.is_authenticated and current_user.role == 'admin' %}
     <a href="{{ url_for('settings_page') }}" class="{{ 'active' if page == 'settings' }}">Settings</a>
+    {% endif %}
   </div>
   <div class="nav-right">
     <span class="live" id="liveStatus" title="Dashboard auto-refresh status"><span class="dot"></span><span class="txt">Live</span></span>
     <div class="user">
-      <span>{{ current_user.username }}</span>
+      <span>{{ current_user.username }} <small style="opacity:.65">({{ current_user.role | capitalize }})</small></span>
       <form method="post" action="{{ url_for('logout') }}">
         <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
         <button class="btn sm" type="submit">Log out</button>

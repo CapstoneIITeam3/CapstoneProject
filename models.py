@@ -192,11 +192,26 @@ def set_password(user_id, new_password, enforce_policy=True):
     users_col.update_one({"_id": oid}, {"$set": {"password_hash": pw_hash}})
 
 
-def find_or_create_firebase_user(email, uid=None, display_name=None, role="admin"):
+def get_admin_emails():
+    """Retrieve set of designated security lead administrator emails."""
+    raw = os.environ.get("ADMIN_EMAILS", "admin@threatwatch.local,testadmin@threatwatch.local")
+    admin_emails = {e.strip().lower() for e in raw.split(",") if e.strip()}
+    admin_emails.add("admin@threatwatch.local")
+    admin_emails.add("testadmin@threatwatch.local")
+    admin_user = os.environ.get("ADMIN_USER")
+    if admin_user and "@" in admin_user:
+        admin_emails.add(admin_user.strip().lower())
+    return admin_emails
+
+
+def find_or_create_firebase_user(email, uid=None, display_name=None, role=None):
     """Find an existing user by email or create a new user provisioned via Firebase.
 
-    Links Firebase UID, updates last login timestamp, and securely provisions new
-    analyst/admin accounts in the MongoDB users collection.
+    Automatic role assignment:
+      - Designated security leads (admin@threatwatch.local, testadmin@threatwatch.local,
+        or configured in ADMIN_EMAILS) are assigned role="admin".
+      - New self-service Firebase registrations default to role="analyst".
+      - Existing user roles in MongoDB are preserved.
     """
     if not email:
         raise ValueError("A valid email is required to provision a Firebase user.")
@@ -212,6 +227,9 @@ def find_or_create_firebase_user(email, uid=None, display_name=None, role="admin
         users_col.update_one({"_id": existing["_id"]}, {"$set": updates})
         existing.update(updates)
         return MongoUser(existing)
+
+    # Automatic role assignment: explicit role > designated admin lead check > default analyst
+    assigned_role = role or ("admin" if clean_email in get_admin_emails() else "analyst")
 
     # Derive unique username
     base_username = (
@@ -234,7 +252,7 @@ def find_or_create_firebase_user(email, uid=None, display_name=None, role="admin
         "username": candidate,
         "password_hash": pw_hash,
         "email": clean_email,
-        "role": role,
+        "role": assigned_role,
         "firebase_uid": uid,
         "auth_provider": "firebase",
         "created_at": utcnow(),
@@ -244,52 +262,6 @@ def find_or_create_firebase_user(email, uid=None, display_name=None, role="admin
     doc["_id"] = result.inserted_id
     return MongoUser(doc)
 
-
-
-
-def find_or_create_firebase_user(email, uid=None, display_name=None, role="admin"):
-    """Find an existing user by email or create a new user provisioned via Firebase."""
-    if not email:
-        raise ValueError("A valid email is required to provision a Firebase user.")
-    clean_email = email.strip().lower()
-    existing = users_col.find_one({"email": clean_email})
-    if existing:
-        updates = {"last_login": utcnow()}
-        if uid and not existing.get("firebase_uid"):
-            updates["firebase_uid"] = uid
-            updates["auth_provider"] = "firebase"
-        users_col.update_one({"_id": existing["_id"]}, {"$set": updates})
-        existing.update(updates)
-        return MongoUser(existing)
-
-    base_username = (
-        display_name.strip().replace(" ", "_").lower()
-        if display_name and display_name.strip()
-        else clean_email.split("@")[0]
-    )
-    sanitized_username = "".join(c for c in base_username if c.isalnum() or c in ("_", "-"))[:30] or "user"
-    candidate = sanitized_username
-    counter = 1
-    while users_col.find_one({"username": candidate}):
-        candidate = f"{sanitized_username}_{counter}"
-        counter += 1
-
-    random_pw = secrets.token_urlsafe(32)
-    pw_hash = bcrypt.hashpw(random_pw.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-    doc = {
-        "username": candidate,
-        "password_hash": pw_hash,
-        "email": clean_email,
-        "role": role,
-        "firebase_uid": uid,
-        "auth_provider": "firebase",
-        "created_at": utcnow(),
-        "last_login": utcnow(),
-    }
-    result = users_col.insert_one(doc)
-    doc["_id"] = result.inserted_id
-    return MongoUser(doc)
 
 # ---------------------------------------------------------------- System Settings
 DEFAULT_SETTINGS = {

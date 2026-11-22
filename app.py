@@ -164,6 +164,40 @@ def unauthorized():
     return redirect(url_for("login", next=request.path))
 
 
+# ---------------------------------------------------------------- Role-Based Access Control (RBAC)
+def role_required(*allowed_roles):
+    """Enforce that the authenticated user possesses one of the allowed RBAC roles."""
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            if not current_user.is_authenticated:
+                if request.path.startswith("/api/"):
+                    return jsonify(error="Authentication required"), 401
+                return redirect(url_for("login", next=request.path))
+
+            user_role = getattr(current_user, "role", "analyst")
+            if user_role not in allowed_roles:
+                log.warning(
+                    "RBAC permission denied for user '%s' (role: '%s') on '%s' (required: %s)",
+                    getattr(current_user, "username", "unknown"),
+                    user_role,
+                    request.path,
+                    allowed_roles,
+                )
+                if request.path.startswith("/api/"):
+                    return jsonify(error="Permission denied: Administrator privileges required"), 403
+                flash("Access denied: Administrator privileges required for this page.", "error")
+                return redirect(url_for("dashboard"))
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def admin_required(fn):
+    """Enforce that the endpoint is restricted exclusively to administrators."""
+    return role_required("admin")(fn)
+
+
 # ---------------------------------------------------------------- CSRF Protection
 def csrf_token():
     if "_csrf" not in session:
@@ -614,6 +648,7 @@ def alerts_page():
 
 @app.route("/settings", methods=["GET", "POST"])
 @login_required
+@admin_required
 def settings_page():
     if request.method == "POST":
         action = request.form.get("action", "save")

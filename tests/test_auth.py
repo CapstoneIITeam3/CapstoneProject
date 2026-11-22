@@ -64,7 +64,7 @@ def test_login_with_invalid_credentials(client):
     post_resp = client.post(
         "/login",
         data={
-            "username": "nonexistent_analyst",
+            "username": "nonexistent_analyst@threatwatch.local",
             "password": "WrongPassword#123",
             "_csrf": csrf,
         },
@@ -72,12 +72,29 @@ def test_login_with_invalid_credentials(client):
     # 401 Unauthorized when DB is reachable, 503 when local DB offline in CI
     assert post_resp.status_code in (401, 503)
     if post_resp.status_code == 401:
-        assert b"Invalid username or password" in post_resp.data
+        assert b"Invalid email or password" in post_resp.data
+
+
+def test_login_invalid_email_format(client):
+    """Verify submitting credentials without a valid email address format returns an error."""
+    get_resp = client.get("/login")
+    csrf = _extract_csrf(get_resp.get_data(as_text=True))
+
+    post_resp = client.post(
+        "/login",
+        data={
+            "username": "non_email_user_format",
+            "password": "WrongPassword#123",
+            "_csrf": csrf,
+        },
+    )
+    assert post_resp.status_code == 401
+    assert b"Email is not valid" in post_resp.data
 
 
 def test_login_lockout_throttling(client):
     """Verify rapid failed logins trigger lockout protection or rate limiting."""
-    get_resp = client.get("/login")
+    get_resp = client.get("/login", environ_base={"REMOTE_ADDR": "127.0.0.99"})
     csrf = _extract_csrf(get_resp.get_data(as_text=True))
 
     responses = []
@@ -85,10 +102,11 @@ def test_login_lockout_throttling(client):
         r = client.post(
             "/login",
             data={
-                "username": "target_admin",
+                "username": "target_admin@threatwatch.local",
                 "password": "BadPassword!999",
                 "_csrf": csrf,
             },
+            environ_base={"REMOTE_ADDR": "127.0.0.99"},
         )
         responses.append(r)
 
@@ -104,19 +122,83 @@ def test_logout_unauthenticated_redirect(client):
     assert resp.status_code in (400, 401, 302)
 
 
-def test_login_invalid_email_format(client):
-    """Verify login rejects usernames or strings that do not conform to email format."""
-    get_resp = client.get("/login")
-    from tests.test_auth import _extract_csrf
-    csrf = _extract_csrf(get_resp.get_data(as_text=True))
+def test_rbac_automatic_role_assignment():
+    """Verify designated admin leads receive role='admin' while new registrations receive 'analyst'."""
+    from models import find_or_create_firebase_user
+    import secrets
 
-    post_resp = client.post(
-        "/login",
-        data={
-            "username": "non_email_user_format",
-            "password": "WrongPassword#123",
-            "_csrf": csrf,
-        },
-    )
-    assert post_resp.status_code == 401
-    assert b"Email is not valid" in post_resp.data
+    random_analyst_email = f"analyst_{secrets.token_hex(4)}@threatwatch.local"
+    analyst_user = find_or_create_firebase_user(random_analyst_email)
+    assert analyst_user.role == "analyst"
+
+    lead_admin = find_or_create_firebase_user("admin@threatwatch.local")
+    assert lead_admin.role == "admin"
+
+    test_admin = find_or_create_firebase_user("testadmin@threatwatch.local")
+    assert test_admin.role == "admin"
+
+
+def test_rbac_settings_access_control(client):
+    """Verify /settings requires role='admin' and blocks role='analyst'."""
+    from models import users_col, create_user
+
+    analyst_email = "analyst_rbac@threatwatch.local"
+    admin_email = "admin_rbac@threatwatch.local"
+    pw = "StrongPass123!"
+
+    # Create both an analyst and admin
+    users_col.delete_many({"email": {"$in": [analyst_email, admin_email]}})
+    create_user(username="analyst_rbac", password=pw, email=analyst_email, role="analyst")
+    create_user(username="admin_rbac", password=pw, email=admin_email, role="admin")
+
+    try:
+        # 1. Unauthenticated: redirects to /login
+        r = client.get("/settings")
+        assert r.status_code == 302
+        assert "/login" in r.headers.get("Location", "")
+
+        # 2. Login as Analyst (using dedicated IP to avoid any rate limit collisions)
+        login_page = client.get("/login", environ_base={"REMOTE_ADDR": "127.0.0.77"})
+        csrf = _extract_csrf(login_page.get_data(as_text=True))
+        login_res = client.post(
+            "/login",
+            data={"username": analyst_email, "password": pw, "_csrf": csrf},
+            environ_base={"REMOTE_ADDR": "127.0.0.77"},
+        )
+        assert login_res.status_code == 302
+
+        # Analyst attempts to access /settings -> blocked by @admin_required, redirected to dashboard
+        r_analyst = client.get("/settings", follow_redirects=True, environ_base={"REMOTE_ADDR": "127.0.0.77"})
+        assert r_analyst.status_code == 200
+        assert b"Access denied: Administrator privileges required" in r_analyst.data
+
+        # 3. Log out (with current session CSRF) and log in as Admin
+        with client.session_transaction() as sess:
+            session_csrf = sess.get("_csrf")
+
+        logout_res = client.post(
+            "/logout",
+            data={"_csrf": session_csrf},
+            environ_base={"REMOTE_ADDR": "127.0.0.77"},
+        )
+        assert logout_res.status_code == 302
+
+        login_page2 = client.get("/login", environ_base={"REMOTE_ADDR": "127.0.0.78"})
+        assert login_page2.status_code == 200
+        csrf2 = _extract_csrf(login_page2.get_data(as_text=True))
+        assert csrf2, "Failed to extract CSRF token from admin login page"
+
+        login_res2 = client.post(
+            "/login",
+            data={"username": admin_email, "password": pw, "_csrf": csrf2},
+            environ_base={"REMOTE_ADDR": "127.0.0.78"},
+        )
+        assert login_res2.status_code == 302
+
+        # Admin accesses /settings -> allowed
+        r_admin = client.get("/settings", environ_base={"REMOTE_ADDR": "127.0.0.78"})
+        assert r_admin.status_code == 200
+        assert b"Settings" in r_admin.data
+        assert b"settingsForm" in r_admin.data
+    finally:
+        users_col.delete_many({"email": {"$in": [analyst_email, admin_email]}})
