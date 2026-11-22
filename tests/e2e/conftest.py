@@ -37,28 +37,29 @@ def live_server():
 
     # Determine database reachability and ensure standard test credentials exist
     test_user_id = str(ObjectId())
-    test_pw_hash = bcrypt.hashpw(b"Test1234!", bcrypt.gensalt()).decode("utf-8")
+    test_pw_hash = bcrypt.hashpw(b"TestPassword123!", bcrypt.gensalt()).decode("utf-8")
     test_doc = {
         "_id": ObjectId(test_user_id),
-        "username": "admin",
-        "email": "admin@threatwatch.local",
+        "username": "testadmin",
+        "email": "testadmin@threatwatch.local",
         "password_hash": test_pw_hash,
         "role": "admin",
     }
 
     try:
         users_col.find_one({}, maxTimeMS=500)
-        # MongoDB is active: seed or update admin user
-        existing = users_col.find_one({"username": "admin"})
+        # MongoDB is active: seed or update testadmin user
+        existing = users_col.find_one({"email": "testadmin@threatwatch.local"})
         if not existing:
-            create_user(username="admin", password="Test1234!", email="admin@threatwatch.local", role="admin")
+            create_user(username="testadmin", password="TestPassword123!", email="testadmin@threatwatch.local", role="admin")
         else:
-            users_col.update_one({"username": "admin"}, {"$set": {"password_hash": test_pw_hash}})
+            users_col.update_one({"email": "testadmin@threatwatch.local"}, {"$set": {"password_hash": test_pw_hash}})
     except Exception:
         # Fallback in-memory user mock when MongoDB daemon is not running in offline CI/CD
         class MockCursor:
             def __init__(self, items=None):
                 self.items = items or []
+                self._iter = None
             def sort(self, *a, **k):
                 return self
             def limit(self, *a, **k):
@@ -67,15 +68,44 @@ def live_server():
                 return self
             def __iter__(self):
                 return iter(self.items)
+            def __next__(self):
+                if self._iter is None:
+                    self._iter = iter(self.items)
+                return next(self._iter)
             def __list__(self):
                 return list(self.items)
 
         def mock_find_user(username):
-            if username == "admin":
+            try:
+                doc = models.users_col.find_one({"username": username})
+                if doc:
+                    return MongoUser(doc)
+            except Exception:
+                pass
+            if username in ("admin", "testadmin", "testadmin@threatwatch.local"):
+                return MongoUser(test_doc)
+            return None
+
+        def mock_find_user_by_email(email):
+            try:
+                doc = models.users_col.find_one({"email": email})
+                if doc:
+                    return MongoUser(doc)
+            except Exception:
+                pass
+            if email in ("admin@threatwatch.local", "testadmin@threatwatch.local"):
                 return MongoUser(test_doc)
             return None
 
         def mock_find_user_by_id(uid):
+            try:
+                from bson import ObjectId
+                query_id = ObjectId(str(uid)) if ObjectId.is_valid(str(uid)) else uid
+                doc = models.users_col.find_one({"_id": query_id})
+                if doc:
+                    return MongoUser(doc)
+            except Exception:
+                pass
             if str(uid) == test_user_id or uid == test_doc["_id"]:
                 return MongoUser(test_doc)
             return None
@@ -86,17 +116,19 @@ def live_server():
             try:
                 return bcrypt.checkpw(raw.encode("utf-8"), user._doc["password_hash"].encode("utf-8"))
             except Exception:
-                return raw == "Test1234!"
+                return raw in ("Test1234!", "TestPassword123!")
 
         def mock_audit(*args, **kwargs):
             pass
 
         flask_app_module.find_user = mock_find_user
+        flask_app_module.find_user_by_email = mock_find_user_by_email
         flask_app_module.find_user_by_id = mock_find_user_by_id
         flask_app_module.check_password = mock_check_password
         flask_app_module.audit = mock_audit
 
         models.find_user = mock_find_user
+        models.find_user_by_email = mock_find_user_by_email
         models.find_user_by_id = mock_find_user_by_id
         models.check_password = mock_check_password
         models.audit = mock_audit
@@ -104,10 +136,13 @@ def live_server():
         # Speed up offline responses by preventing 5s connection timeouts
         models.settings_col.find_one = lambda *a, **k: None
         models.log_records_col.find = lambda *a, **k: MockCursor([])
+        models.log_records_col.find_one = lambda *a, **k: None
         models.log_records_col.count_documents = lambda *a, **k: 0
         models.alerts_col.find = lambda *a, **k: MockCursor([])
+        models.alerts_col.find_one = lambda *a, **k: None
         models.alerts_col.count_documents = lambda *a, **k: 0
         models.audit_logs_col.find = lambda *a, **k: MockCursor([])
+        models.audit_logs_col.find_one = lambda *a, **k: None
 
     flask_app.config.update({
         "TESTING": True,
@@ -150,7 +185,7 @@ def driver():
         pass
 
 
-def do_login(driver, base_url, username="admin", password="Test1234!"):
+def do_login(driver, base_url, username="testadmin@threatwatch.local", password="TestPassword123!"):
     """Helper utility to perform UI login via browser automation."""
     driver.get(f"{base_url}/login")
     u_field = driver.find_element("id", "username")

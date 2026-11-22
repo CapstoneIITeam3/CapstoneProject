@@ -85,26 +85,44 @@ def test_failed_login_with_invalid_credentials(driver, live_server):
     """Verify that submitting incorrect credentials displays an authentication error banner."""
     driver.get(f"{live_server}/login")
 
-    driver.find_element(By.ID, "username").send_keys("invalid_operator")
+    driver.find_element(By.ID, "username").send_keys("invalid_operator@threatwatch.local")
     driver.find_element(By.ID, "password").send_keys("IncorrectPassword123!")
 
     time.sleep(0.3)
     driver.find_element(By.ID, "submitBtn").click()
 
     # Wait for page response
-    WebDriverWait(driver, 5).until(
-        lambda d: "/login" in d.current_url
-    )
+    time.sleep(1.0)
+    auth_status = driver.find_element(By.ID, "authStatusMsg")
     error_elements = driver.find_elements(By.CLASS_NAME, "error")
-    assert len(error_elements) > 0 or "/login" in driver.current_url
+    assert auth_status.is_displayed() or len(error_elements) > 0 or "/login" in driver.current_url
+
+
+def test_login_rejects_invalid_email_format(driver, live_server):
+    """Verify that entering an invalid email format prevents login and shows an error."""
+    driver.get(f"{live_server}/login")
+
+    u_field = driver.find_element(By.ID, "username")
+    p_field = driver.find_element(By.ID, "password")
+    submit_btn = driver.find_element(By.ID, "submitBtn")
+
+    u_field.send_keys("invalid_not_an_email")
+    p_field.send_keys("SomePassword123!")
+    time.sleep(0.3)
+    submit_btn.click()
+
+    time.sleep(0.5)
+    auth_status = driver.find_element(By.ID, "authStatusMsg")
+    assert auth_status.is_displayed()
+    assert "Email is not valid" in auth_status.text
 
 
 def test_successful_login_and_logout_flow(driver, live_server):
     """Verify end-to-end user journey: login with valid credentials, dashboard landing, and logout."""
-    do_login(driver, live_server, username="admin", password="Test1234!")
+    do_login(driver, live_server, username="testadmin@threatwatch.local", password="TestPassword123!")
 
     # Verify landing on Dashboard
-    WebDriverWait(driver, 8).until(
+    WebDriverWait(driver, 10).until(
         lambda d: d.current_url.rstrip("/").endswith(live_server.rstrip("/"))
     )
     assert "ThreatWatch" in driver.title or "Dashboard" in driver.title
@@ -114,7 +132,7 @@ def test_successful_login_and_logout_flow(driver, live_server):
     assert "Dashboard" in topnav.text
     assert "Logs" in topnav.text
     assert "Alerts" in topnav.text
-    assert "admin" in topnav.text
+    assert "testadmin" in topnav.text or "admin" in topnav.text
 
     # Locate and trigger Log out button
     logout_btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Log out')]")

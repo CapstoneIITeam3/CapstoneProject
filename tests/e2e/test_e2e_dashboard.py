@@ -8,7 +8,7 @@ from tests.e2e.conftest import do_login
 
 def test_dashboard_overview_and_visualizations(driver, live_server):
     """Verify that the primary ThreatWatch dashboard loads stat metric cards and chart canvases."""
-    do_login(driver, live_server, username="admin", password="Test1234!")
+    do_login(driver, live_server, username="testadmin@threatwatch.local", password="TestPassword123!")
 
     # Verify landing on Dashboard view
     WebDriverWait(driver, 8).until(
@@ -34,7 +34,7 @@ def test_dashboard_overview_and_visualizations(driver, live_server):
 
 def test_analyze_modal_open_preset_close(driver, live_server):
     """Verify that the traffic analysis modal opens, populates via presets, and closes properly."""
-    do_login(driver, live_server, username="admin", password="Test1234!")
+    do_login(driver, live_server, username="testadmin@threatwatch.local", password="TestPassword123!")
 
     analyze_btn = driver.find_element(By.ID, "analyzeBtn")
     analyze_btn.click()
@@ -61,7 +61,7 @@ def test_analyze_modal_open_preset_close(driver, live_server):
 
 def test_logs_page_navigation_and_table_controls(driver, live_server):
     """Verify navigation to the Logs view, search filter controls, and tabular log structure."""
-    do_login(driver, live_server, username="admin", password="Test1234!")
+    do_login(driver, live_server, username="testadmin@threatwatch.local", password="TestPassword123!")
 
     # Click Logs navigation link
     logs_nav = driver.find_element(By.XPATH, "//a[contains(text(), 'Logs')]")
@@ -85,7 +85,7 @@ def test_logs_page_navigation_and_table_controls(driver, live_server):
 
 def test_alerts_page_navigation_and_status_tabs(driver, live_server):
     """Verify navigation to Alerts page and tabbed filtering by alert triage status."""
-    do_login(driver, live_server, username="admin", password="Test1234!")
+    do_login(driver, live_server, username="testadmin@threatwatch.local", password="TestPassword123!")
 
     # Click Alerts navigation link
     alerts_nav = driver.find_element(By.XPATH, "//a[contains(text(), 'Alerts')]")
@@ -113,7 +113,7 @@ def test_alerts_page_navigation_and_status_tabs(driver, live_server):
 
 def test_settings_page_threshold_controls(driver, live_server):
     """Verify navigation to Settings view and threshold parameter input fields."""
-    do_login(driver, live_server, username="admin", password="Test1234!")
+    do_login(driver, live_server, username="testadmin@threatwatch.local", password="TestPassword123!")
 
     # Click Settings navigation link
     settings_nav = driver.find_element(By.XPATH, "//a[contains(text(), 'Settings')]")
