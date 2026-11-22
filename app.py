@@ -3,6 +3,7 @@
 Unified application server combining the Flask dashboard UI, REST API,
 MongoDB persistence, and ML threat detection engine.
 """
+import base64
 import csv
 import io
 import json
@@ -102,7 +103,226 @@ app.config.update(
     },
 )
 
-swagger = Swagger(app)
+swagger_template = {
+    "swagger": "2.0",
+    "info": {
+        "title": "ThreatWatch - AI Cyber Threat Detection & Alerting API",
+        "description": (
+            "Enterprise REST API for the ThreatWatch AI-Based Intrusion Detection System (Team 38).\n\n"
+            "### Supported Authentication Mechanisms:\n"
+            "- **Bearer Token (JWT)**: Pass Google/Firebase ID Token via `Authorization: Bearer <token>`.\n"
+            "- **API Key**: Pass pre-shared sensor key via `X-API-Key`.\n"
+            "- **HTTP Basic**: Pass standard credentials via `Authorization: Basic <base64(user:pass)>`.\n"
+            "- **Session Cookie**: Inherited automatically when authenticated in the ThreatWatch SOC Dashboard."
+        ),
+        "version": "2.0.0",
+        "contact": {
+            "name": "ThreatWatch Engineering (Team 38)",
+            "email": "dhyey.pujara23@st.niituniversity.in",
+        },
+    },
+    "securityDefinitions": {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "name": "X-API-Key",
+            "in": "header",
+            "description": "Pre-shared ingestion key (matched against INGEST_API_KEY).",
+        },
+        "Bearer": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": "Firebase ID Token. Value format: 'Bearer <firebase_jwt_token>'.",
+        },
+        "BasicAuth": {
+            "type": "basic",
+            "description": "Standard HTTP Basic username and password authentication.",
+        },
+        "CsrfToken": {
+            "type": "apiKey",
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "description": "Double-submit CSRF token (required for state-mutating requests when using session cookies).",
+        },
+    },
+    "definitions": {
+        "TrafficFeatures": {
+            "type": "object",
+            "required": ["protocol_type", "service", "flag", "src_bytes", "dst_bytes"],
+            "properties": {
+                "duration": {"type": "integer", "example": 0, "description": "Connection duration in seconds"},
+                "protocol_type": {"type": "string", "enum": ["tcp", "udp", "icmp"], "example": "tcp"},
+                "service": {"type": "string", "example": "http", "description": "Network service on destination"},
+                "flag": {"type": "string", "example": "SF", "description": "Normal or error connection status flag"},
+                "src_bytes": {"type": "integer", "example": 181, "description": "Bytes from source to destination"},
+                "dst_bytes": {"type": "integer", "example": 5450, "description": "Bytes from destination to source"},
+                "land": {"type": "integer", "enum": [0, 1], "example": 0},
+                "wrong_fragment": {"type": "integer", "example": 0},
+                "urgent": {"type": "integer", "example": 0},
+                "hot": {"type": "integer", "example": 0},
+                "num_failed_logins": {"type": "integer", "example": 0},
+                "logged_in": {"type": "integer", "enum": [0, 1], "example": 1},
+                "num_compromised": {"type": "integer", "example": 0},
+                "root_shell": {"type": "integer", "enum": [0, 1], "example": 0},
+                "su_attempted": {"type": "integer", "enum": [0, 1], "example": 0},
+                "num_root": {"type": "integer", "example": 0},
+                "num_file_creations": {"type": "integer", "example": 0},
+                "num_shells": {"type": "integer", "example": 0},
+                "num_access_files": {"type": "integer", "example": 0},
+                "num_outbound_cmds": {"type": "integer", "example": 0},
+                "is_host_login": {"type": "integer", "enum": [0, 1], "example": 0},
+                "is_guest_login": {"type": "integer", "enum": [0, 1], "example": 0},
+                "count": {"type": "integer", "example": 8},
+                "srv_count": {"type": "integer", "example": 8},
+                "serror_rate": {"type": "number", "format": "float", "example": 0.0},
+                "srv_serror_rate": {"type": "number", "format": "float", "example": 0.0},
+                "rerror_rate": {"type": "number", "format": "float", "example": 0.0},
+                "srv_rerror_rate": {"type": "number", "format": "float", "example": 0.0},
+                "same_srv_rate": {"type": "number", "format": "float", "example": 1.0},
+                "diff_srv_rate": {"type": "number", "format": "float", "example": 0.0},
+                "srv_diff_host_rate": {"type": "number", "format": "float", "example": 0.0},
+                "dst_host_count": {"type": "integer", "example": 9},
+                "dst_host_srv_count": {"type": "integer", "example": 9},
+                "dst_host_same_srv_rate": {"type": "number", "format": "float", "example": 1.0},
+                "dst_host_diff_srv_rate": {"type": "number", "format": "float", "example": 0.0},
+                "dst_host_same_src_port_rate": {"type": "number", "format": "float", "example": 0.11},
+                "dst_host_srv_diff_host_rate": {"type": "number", "format": "float", "example": 0.0},
+                "dst_host_serror_rate": {"type": "number", "format": "float", "example": 0.0},
+                "dst_host_srv_serror_rate": {"type": "number", "format": "float", "example": 0.0},
+                "dst_host_rerror_rate": {"type": "number", "format": "float", "example": 0.0},
+                "dst_host_srv_rerror_rate": {"type": "number", "format": "float", "example": 0.0},
+                "src_ip": {"type": "string", "example": "192.168.1.105"},
+                "dst_ip": {"type": "string", "example": "10.0.0.1"},
+                "label": {"type": "string", "example": "normal"},
+            },
+        },
+        "ClassifyResponse": {
+            "type": "object",
+            "properties": {
+                "log_id": {"type": "integer", "example": 1042},
+                "threat_score": {"type": "number", "format": "float", "example": 0.8845},
+                "classification": {"type": "string", "enum": ["Normal", "Suspicious", "Malicious"], "example": "Malicious"},
+                "is_alert": {"type": "boolean", "example": True},
+                "anomaly_score": {"type": "number", "format": "float", "example": -0.1542},
+                "rf_probability": {"type": "number", "format": "float", "example": 0.8845},
+                "attack_category": {"type": "string", "example": "Known attack (RF)"},
+            },
+        },
+        "PredictResponse": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "example": True},
+                "prediction": {
+                    "type": "object",
+                    "properties": {
+                        "label": {"type": "string", "example": "Malicious"},
+                        "score": {"type": "number", "format": "float", "example": 0.8845},
+                        "severity": {"type": "string", "example": "High"},
+                    },
+                },
+                "threat_score": {"type": "number", "format": "float", "example": 0.8845},
+                "tier": {"type": "string", "example": "Malicious"},
+                "anomaly_detected": {"type": "boolean", "example": True},
+                "attack_category": {"type": "string", "example": "Known attack (RF)"},
+                "log_id": {"type": "string", "example": "1042"},
+                "timestamp": {"type": "string", "example": "2026-11-22T19:40:00Z"},
+                "alert": {
+                    "type": "object",
+                    "properties": {
+                        "alert_id": {"type": "string", "example": "42"},
+                        "status": {"type": "string", "example": "created"},
+                    },
+                },
+            },
+        },
+        "HealthResponse": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "enum": ["ok", "degraded"], "example": "ok"},
+                "service": {"type": "string", "example": "ThreatWatch AI-IDS"},
+                "database": {"type": "string", "enum": ["connected", "disconnected"], "example": "connected"},
+                "detector": {
+                    "type": "object",
+                    "properties": {
+                        "mode": {"type": "string", "example": "team ML (RF + IF)"},
+                        "isolation_forest": {"type": "boolean", "example": True},
+                        "preprocessor": {"type": "boolean", "example": True},
+                    },
+                },
+                "timestamp": {"type": "string", "example": "2026-11-22T19:40:00Z"},
+            },
+        },
+        "StatsResponse": {
+            "type": "object",
+            "properties": {
+                "total_logs": {"type": "integer", "example": 15420},
+                "threats": {"type": "integer", "example": 320},
+                "risk_level": {"type": "string", "example": "Medium"},
+                "open_alerts": {"type": "integer", "example": 5},
+                "window": {"type": "integer", "example": 450},
+                "tier_counts": {
+                    "type": "object",
+                    "properties": {
+                        "Normal": {"type": "integer", "example": 15100},
+                        "Suspicious": {"type": "integer", "example": 200},
+                        "Malicious": {"type": "integer", "example": 120},
+                    },
+                },
+            },
+        },
+        "FirebaseLoginRequest": {
+            "type": "object",
+            "required": ["idToken"],
+            "properties": {
+                "idToken": {
+                    "type": "string",
+                    "description": "Cryptographically signed Google/Firebase ID Token (RS256 JWT)",
+                    "example": "eyJhbGciOiJSUzI1NiIsImtpZCI6Ij...",
+                },
+            },
+        },
+        "FirebaseLoginResponse": {
+            "type": "object",
+            "properties": {
+                "success": {"type": "boolean", "example": True},
+                "redirect": {"type": "string", "example": "/"},
+                "user": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer", "example": 1},
+                        "username": {"type": "string", "example": "analyst"},
+                        "email": {"type": "string", "example": "analyst@threatwatch.local"},
+                        "role": {"type": "string", "example": "admin"},
+                    },
+                },
+            },
+        },
+        "ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {"type": "string", "example": "Authentication required"},
+            },
+        },
+    },
+}
+
+swagger_config = {
+    "headers": [],
+    "specs": [
+        {
+            "endpoint": "apispec_1",
+            "route": "/apispec_1.json",
+            "rule_filter": lambda rule: True,
+            "model_filter": lambda tag: True,
+        }
+    ],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/apidocs/",
+    "auth": "{}",
+}
+
+swagger = Swagger(app, template=swagger_template, config=swagger_config)
 
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
@@ -156,6 +376,58 @@ def inject_firebase_context():
 @login_manager.user_loader
 def load_user(uid):
     return find_user_by_id(uid)
+
+
+@login_manager.request_loader
+def load_user_from_request(req):
+    """Authenticate API requests dynamically via Header: API Key, Bearer JWT, or Basic Auth."""
+    # 1. API key in header (X-API-Key)
+    api_key = req.headers.get("X-API-Key")
+    ingest_key = os.environ.get("INGEST_API_KEY")
+    if api_key and ingest_key and secrets.compare_digest(api_key, ingest_key):
+        return find_user("admin") or MongoUser({"_id": "api_client_1", "id": 1, "username": "api_client", "email": "api@threatwatch.local", "role": "admin"})
+
+    # 2. HTTP Authorization header (Bearer or Basic)
+    auth = req.headers.get("Authorization", "").strip()
+    if auth:
+        parts = auth.split(None, 1)
+        if len(parts) == 2:
+            scheme, credential = parts[0].lower(), parts[1].strip()
+            # 2a. Bearer Token (Firebase RS256 JWT)
+            if scheme == "bearer":
+                try:
+                    decoded = google_id_token.verify_firebase_token(
+                        credential,
+                        google_requests.Request(),
+                        audience=FIREBASE_PROJECT_ID,
+                    )
+                    email = decoded.get("email")
+                    if email:
+                        uid = decoded.get("sub") or decoded.get("user_id")
+                        name = decoded.get("name")
+                        return find_user(email) or find_user_by_email(email) or find_or_create_firebase_user(
+                            email=email,
+                            uid=uid,
+                            display_name=name,
+                            role="admin",
+                        )
+                except Exception as exc:
+                    log.warning("Firebase Bearer token validation failed: %s", exc)
+                    return None
+            # 2b. HTTP Basic Auth (username:password)
+            elif scheme == "basic":
+                try:
+                    decoded_bytes = base64.b64decode(credential)
+                    creds_str = decoded_bytes.decode("utf-8")
+                    if ":" in creds_str:
+                        username, password = creds_str.split(":", 1)
+                        user = find_user(username) or find_user_by_email(username)
+                        if user and check_password(user, password):
+                            return user
+                except Exception as exc:
+                    log.warning("Basic auth validation failed: %s", exc)
+                    return None
+    return None
 
 
 @login_manager.unauthorized_handler
@@ -303,6 +575,10 @@ def check_csrf():
         # Firebase authentication uses signed Google ID tokens with built-in replay protection
         if request.path == "/api/auth/firebase-login":
             return
+        # Non-browser API requests authenticated via Authorization header (Bearer / Basic) or API Key
+        if request.path.startswith("/api/") and (request.headers.get("Authorization") or _valid_api_key()):
+            if current_user.is_authenticated or _valid_api_key():
+                return
         sent = request.headers.get("X-CSRF-Token") or request.form.get("_csrf")
         if not sent or not secrets.compare_digest(sent, session.get("_csrf", "")):
             if request.path.startswith("/api/"):
@@ -630,10 +906,40 @@ def logout():
 @app.route("/api/auth/firebase-login", methods=["POST"])
 @limiter.limit("15 per minute")
 def api_firebase_login():
-    """Verify Firebase ID token (JWT) and authenticate user session into MongoDB.
-
-    Expects JSON payload: { "idToken": "<firebase_id_token>" }
-    Returns JSON: { "success": True, "redirect": "/", "user": { ... } }
+    """
+    Authenticate via Firebase ID Token (JWT)
+    ---
+    tags:
+      - Authentication
+    consumes:
+      - application/json
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/FirebaseLoginRequest'
+    responses:
+      200:
+        description: Authentication successful, user session established
+        schema:
+          $ref: '#/definitions/FirebaseLoginResponse'
+      400:
+        description: Missing or malformed idToken in request payload
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      401:
+        description: Invalid or expired Firebase ID token
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      403:
+        description: Domain not authorized
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      503:
+        description: Firebase Authentication not configured on server
+        schema:
+          $ref: '#/definitions/ErrorResponse'
     """
     if not is_firebase_configured():
         return jsonify(error="Firebase Authentication is not configured on the server"), 503
@@ -867,19 +1173,40 @@ def _risk_level():
 @limiter.limit("60 per minute")
 def api_classify():
     """
-    Ingest and classify network traffic via ML models
+    Ingest and Classify Network Traffic via ML Models
     ---
     tags:
       - Intrusion Detection
+    security:
+      - ApiKeyAuth: []
+      - Bearer: []
+      - BasicAuth: []
     consumes:
       - application/json
+    parameters:
+      - in: body
+        name: traffic
+        required: true
+        description: 41 NSL-KDD network traffic attributes with optional metadata (src_ip, dst_ip, label)
+        schema:
+          $ref: '#/definitions/TrafficFeatures'
     responses:
       201:
-        description: Traffic classified and recorded
+        description: Traffic classified and recorded in MongoDB
+        schema:
+          $ref: '#/definitions/ClassifyResponse'
       400:
-        description: Malformed traffic data
+        description: Malformed traffic data or invalid JSON
+        schema:
+          $ref: '#/definitions/ErrorResponse'
       401:
-        description: Authentication required
+        description: Authentication required (provide valid API Key, Bearer Token, or Session)
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      503:
+        description: Database temporarily unavailable
+        schema:
+          $ref: '#/definitions/ErrorResponse'
     """
     if not (current_user.is_authenticated or _valid_api_key()):
         return jsonify(error="Authentication required"), 401
@@ -912,17 +1239,39 @@ def api_classify():
 @limiter.limit("120 per minute")
 def api_predict():
     """
-    Backward-compatible prediction endpoint for traffic simulator
+    Simulate and Detect Cyber Threats (Backward Compatible)
     ---
     tags:
       - Intrusion Detection
+    security:
+      - ApiKeyAuth: []
+      - Bearer: []
+      - BasicAuth: []
     consumes:
       - application/json
+    parameters:
+      - in: body
+        name: body
+        required: true
+        description: Network traffic attributes (nested under 'traffic' or top-level)
+        schema:
+          type: object
+          properties:
+            traffic:
+              $ref: '#/definitions/TrafficFeatures'
     responses:
       200:
         description: Prediction successfully generated and stored
+        schema:
+          $ref: '#/definitions/PredictResponse'
       400:
         description: Invalid request payload
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      503:
+        description: Database temporarily unavailable
+        schema:
+          $ref: '#/definitions/ErrorResponse'
     """
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -970,7 +1319,36 @@ def api_predict():
 @app.route("/api/stats")
 @login_required
 def api_stats():
-    """Dashboard metrics, histogram, categories, time series, and sources."""
+    """
+    Retrieve Dashboard Telemetry, Histograms, and Time-Series Data
+    ---
+    tags:
+      - Telemetry & Analytics
+    security:
+      - Bearer: []
+      - BasicAuth: []
+      - ApiKeyAuth: []
+    parameters:
+      - name: minutes
+        in: query
+        type: integer
+        required: false
+        default: 30
+        description: Time window in minutes (5 to 1440)
+    responses:
+      200:
+        description: Real-time traffic metrics, tier counts, and series buckets
+        schema:
+          $ref: '#/definitions/StatsResponse'
+      401:
+        description: Authentication required
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      503:
+        description: Database temporarily unavailable
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+    """
     minutes = min(max(int(request.args.get("minutes", 30)), 5), 1440)
     pipeline_tiers = [
         {"$group": {"_id": "$result.tier", "count": {"$sum": 1}}}
@@ -1118,7 +1496,68 @@ def _build_log_filter(args):
 @app.route("/api/logs")
 @login_required
 def api_logs():
-    """Retrieve filtered, paginated traffic logs."""
+    """
+    Query Filtered and Paginated Traffic Logs
+    ---
+    tags:
+      - Traffic Logs
+    security:
+      - Bearer: []
+      - BasicAuth: []
+      - ApiKeyAuth: []
+    parameters:
+      - name: page
+        in: query
+        type: integer
+        default: 1
+        description: Page number (1-based)
+      - name: per_page
+        in: query
+        type: integer
+        default: 25
+        description: Records per page (1 to 100)
+      - name: tier
+        in: query
+        type: string
+        enum: [Normal, Suspicious, Malicious]
+        description: Filter by classification tier
+      - name: category
+        in: query
+        type: string
+        description: Filter by attack category name
+      - name: min_score
+        in: query
+        type: number
+        format: float
+        description: Minimum threat score threshold (0.0 to 1.0)
+      - name: search
+        in: query
+        type: string
+        description: Search keyword matching IP or service
+      - name: sort
+        in: query
+        type: string
+        enum: [time, score, id]
+        default: time
+        description: Sort field
+      - name: order
+        in: query
+        type: string
+        enum: [asc, desc]
+        default: desc
+        description: Sort direction
+    responses:
+      200:
+        description: Paginated log records with pagination metadata
+      401:
+        description: Authentication required
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      503:
+        description: Database temporarily unavailable
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+    """
     page = max(int(request.args.get("page", 1)), 1)
     per = min(max(int(request.args.get("per_page", 25)), 1), 100)
     filt = _build_log_filter(request.args)
@@ -1143,7 +1582,37 @@ def api_logs():
 @app.route("/api/logs/<log_id>")
 @login_required
 def api_log_detail(log_id):
-    """Retrieve full details for a single log record."""
+    """
+    Retrieve Detailed Inspection for a Single Log Record
+    ---
+    tags:
+      - Traffic Logs
+    security:
+      - Bearer: []
+      - BasicAuth: []
+      - ApiKeyAuth: []
+    parameters:
+      - name: log_id
+        in: path
+        type: string
+        required: true
+        description: Unique numeric ID of the log record
+    responses:
+      200:
+        description: Full 41-feature payload, classification results, and alert status
+      401:
+        description: Authentication required
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      404:
+        description: Log record not found
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      503:
+        description: Database temporarily unavailable
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+    """
     lr = find_log_by_id(log_id) or abort(404)
     return jsonify(log_to_dict(lr, full=True))
 
@@ -1151,7 +1620,37 @@ def api_log_detail(log_id):
 @app.route("/api/logs/export.csv")
 @login_required
 def api_logs_export():
-    """Stream CSV export of filtered logs."""
+    """
+    Export Filtered Traffic Logs to CSV
+    ---
+    tags:
+      - Traffic Logs
+    security:
+      - Bearer: []
+      - BasicAuth: []
+      - ApiKeyAuth: []
+    produces:
+      - text/csv
+    parameters:
+      - name: tier
+        in: query
+        type: string
+        enum: [Normal, Suspicious, Malicious]
+      - name: min_score
+        in: query
+        type: number
+        format: float
+      - name: search
+        in: query
+        type: string
+    responses:
+      200:
+        description: Streaming CSV file attachment containing log telemetry
+      401:
+        description: Authentication required
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+    """
     filt = _build_log_filter(request.args)
     audit("export_csv", f"filters: {dict(request.args)}", current_user.id)
 
@@ -1208,7 +1707,50 @@ def api_logs_export():
 @app.route("/api/alerts")
 @login_required
 def api_alerts():
-    """Retrieve paginated security alerts."""
+    """
+    Retrieve Paginated Intrusion Alerts
+    ---
+    tags:
+      - Security Alerts
+    security:
+      - Bearer: []
+      - BasicAuth: []
+      - ApiKeyAuth: []
+    parameters:
+      - name: status
+        in: query
+        type: string
+        enum: [open, acknowledged, dismissed]
+        description: Filter by alert lifecycle status
+      - name: severity
+        in: query
+        type: string
+        enum: [Suspicious, Malicious]
+        description: Filter by severity level
+      - name: page
+        in: query
+        type: integer
+        default: 1
+      - name: per_page
+        in: query
+        type: integer
+        default: 25
+      - name: since_id
+        in: query
+        type: integer
+        description: Only fetch alerts with ID greater than since_id
+    responses:
+      200:
+        description: List of alert records with lifecycle counts
+      401:
+        description: Authentication required
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      503:
+        description: Database temporarily unavailable
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+    """
     a = request.args
     filt = {}
     if a.get("status") in ("open", "acknowledged", "dismissed"):
@@ -1250,7 +1792,54 @@ def api_alerts():
 @app.route("/api/alerts/<alert_id>/<action>", methods=["POST"])
 @login_required
 def api_alert_action(alert_id, action):
-    """Update status of a security alert."""
+    """
+    Triage Security Alert Status (Acknowledge / Dismiss / Reopen)
+    ---
+    tags:
+      - Security Alerts
+    security:
+      - Bearer: []
+      - BasicAuth: []
+      - ApiKeyAuth: []
+      - CsrfToken: []
+    parameters:
+      - name: alert_id
+        in: path
+        type: integer
+        required: true
+        description: Alert numeric sequence ID
+      - name: action
+        in: path
+        type: string
+        required: true
+        enum: [acknowledge, dismiss, reopen]
+        description: Triage state change action
+      - in: body
+        name: body
+        required: false
+        schema:
+          type: object
+          properties:
+            note:
+              type: string
+              maxLength: 500
+              description: Optional triage note or resolution summary
+    responses:
+      200:
+        description: Alert status updated successfully
+      400:
+        description: Invalid action or missing CSRF token
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      401:
+        description: Authentication required
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      404:
+        description: Alert not found
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+    """
     if action not in ("acknowledge", "dismiss", "reopen"):
         abort(404)
     a = find_alert_by_id(alert_id) or abort(404)
@@ -1276,7 +1865,41 @@ def api_alert_action(alert_id, action):
 @app.route("/api/alerts/acknowledge-all", methods=["POST"])
 @login_required
 def api_alert_ack_all():
-    """Bulk acknowledge open alerts."""
+    """
+    Bulk Acknowledge Open Alerts
+    ---
+    tags:
+      - Security Alerts
+    security:
+      - Bearer: []
+      - BasicAuth: []
+      - ApiKeyAuth: []
+      - CsrfToken: []
+    parameters:
+      - in: body
+        name: body
+        required: false
+        schema:
+          type: object
+          properties:
+            severity:
+              type: string
+              enum: [Suspicious, Malicious]
+              description: Optional severity level to filter bulk acknowledge
+    responses:
+      200:
+        description: Number of alerts acknowledged
+        schema:
+          type: object
+          properties:
+            acknowledged:
+              type: integer
+              example: 12
+      401:
+        description: Authentication required
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+    """
     sev = (request.get_json(silent=True) or {}).get("severity")
     filt = {"status": "open"}
     if sev in ("Suspicious", "Malicious"):
@@ -1296,7 +1919,21 @@ def api_alert_ack_all():
 
 @app.route("/api/health")
 def api_health():
-    """System health check verifying backend, database, and ML detector."""
+    """
+    Operational Health & Diagnostic Status
+    ---
+    tags:
+      - System & Diagnostics
+    responses:
+      200:
+        description: Backend service, detector engine, and database operational
+        schema:
+          $ref: '#/definitions/HealthResponse'
+      503:
+        description: Degraded state (MongoDB unreachable or detector error)
+        schema:
+          $ref: '#/definitions/HealthResponse'
+    """
     try:
         check_database_connection()
         db_ok = True
