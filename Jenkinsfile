@@ -102,8 +102,9 @@ pipeline {
             }
             post {
                 always {
-                    echo 'Publishing Selenium E2E test analytics report...'
+                    echo 'Publishing Selenium E2E test analytics report and recorded video artifacts...'
                     junit testResults: 'reports/e2e-results.xml', allowEmptyResults: true
+                    archiveArtifacts artifacts: 'reports/videos/**/*.mp4', allowEmptyArchive: true
                 }
             }
         }

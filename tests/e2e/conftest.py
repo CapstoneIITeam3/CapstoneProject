@@ -185,6 +185,87 @@ def driver():
         pass
 
 
+@pytest.hookimpl(tryfirst=True, hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Capture test outcome to support failure-only video retention mode."""
+    outcome = yield
+    report = outcome.get_result()
+    if report.when == "call":
+        item.test_failed = report.failed
+
+
+@pytest.fixture(scope="session")
+def session_video_dir():
+    """Create and yield a timestamped directory (e.g. reports/videos/run_YYYYMMDD_HHMMSS) for the test run."""
+    record_mode = os.environ.get("RECORD_VIDEO", "1").lower().strip()
+    if record_mode in ("0", "false", "off", "no"):
+        yield None
+        return
+
+    base_video_dir = os.environ.get(
+        "VIDEO_DIR",
+        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "reports", "videos")),
+    )
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    session_dir = os.path.join(base_video_dir, f"run_{timestamp}")
+    os.makedirs(session_dir, exist_ok=True)
+
+    yield session_dir
+
+    # Clean up empty directory if no videos were kept (e.g. failed_only mode with all passing tests)
+    try:
+        if os.path.exists(session_dir) and not os.listdir(session_dir):
+            os.rmdir(session_dir)
+    except OSError:
+        pass
+
+
+@pytest.fixture(scope="function", autouse=True)
+def record_test_video(request, driver, session_video_dir):
+    """Automatically record browser interactions to an MP4 video file inside the session folder.
+    
+    Controlled via environment variables:
+      - RECORD_VIDEO: "1" / "all" (record all tests, default), "failed_only" (keep only on failure), or "0" (disabled)
+      - VIDEO_DIR: Target root directory (default: 'reports/videos' in repo root)
+      - VIDEO_SPEED: Playback speed multiplier (default: 1.0 for true real-time, 0.5 for 2x slow-mo)
+      - VIDEO_END_HOLD: Seconds to hold the final state with [PASSED]/[FAILED] badge (default: 1.5s)
+      - VIDEO_FPS: Target frame rate (default: 10 FPS)
+    """
+    record_mode = os.environ.get("RECORD_VIDEO", "1").lower().strip()
+    if record_mode in ("0", "false", "off", "no") or not session_video_dir:
+        yield None
+        return
+
+    fps = int(os.environ.get("VIDEO_FPS", "10"))
+    speed = float(os.environ.get("VIDEO_SPEED", "1.0"))
+    end_hold_sec = float(os.environ.get("VIDEO_END_HOLD", "1.5"))
+    test_name = request.node.name
+    clean_test_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in test_name)
+    video_path = os.path.join(session_video_dir, f"{clean_test_name}.mp4")
+
+    from tests.e2e.video_recorder import SeleniumVideoRecorder
+    recorder = SeleniumVideoRecorder(
+        driver,
+        video_path,
+        fps=fps,
+        speed=speed,
+        end_hold_sec=end_hold_sec,
+        overlay=True,
+        test_name=test_name,
+    )
+    recorder.start()
+
+    yield recorder
+
+    test_failed = getattr(request.node, "test_failed", False)
+    recorder.set_status(passed=not test_failed)
+    recorder.stop()
+
+    # If configured for failures only, prune passing test video
+    if record_mode in ("failed_only", "failures_only", "failures") and not test_failed:
+        recorder.discard()
+
+
 def do_login(driver, base_url, username="testadmin@threatwatch.local", password="TestPassword123!"):
     """Helper utility to perform UI login via browser automation."""
     driver.get(f"{base_url}/login")

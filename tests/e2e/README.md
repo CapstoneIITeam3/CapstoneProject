@@ -8,6 +8,7 @@ Automated End-to-End (E2E) browser testing suite for ThreatWatch AI-IDS using Se
 
 - **W3C WebDriver Client:** `selenium>=4.18.0` with W3C bidirectional protocol support.
 - **Automated Driver Management:** `webdriver-manager>=4.0.0` automatically fetches and configures the matching ChromeDriver binary.
+- **Automated Video Recording:** In-process screen recorder (`video_recorder.py`) using `opencv-python` and `numpy`. Operates seamlessly across both Headless (`--headless=new`) and Headful Chrome, generating timestamped `.mp4` video artifacts with heads-up diagnostic HUD overlays.
 - **Background Application Server:** Dedicated thread running `werkzeug.serving.make_server` on an ephemeral TCP port discovered dynamically via `find_free_port()`.
 - **Offline CI/CD Resilience:** Built-in in-memory fallback for MongoDB user lookups and collection queries, guaranteeing reliable, timeout-free test runs even when a local MongoDB daemon is not running.
 - **Browser Configuration:** Headless Chrome (`--headless=new`, `--no-sandbox`, `--disable-dev-shm-usage`, `--disable-gpu`, `--window-size=1920,1080`).
@@ -19,10 +20,12 @@ Automated End-to-End (E2E) browser testing suite for ThreatWatch AI-IDS using Se
 ```text
 tests/e2e/
 ├── __init__.py               # E2E test package marker
-├── conftest.py               # Live server fixture, WebDriver setup, and login helper
+├── conftest.py               # Live server fixture, WebDriver setup, video recorder fixture, and login helper
+├── video_recorder.py         # Thread-safe OpenCV MP4 screen recorder with diagnostic HUD overlay
 ├── test_e2e_auth.py          # Authentication, password toggle, modal, and session tests
 ├── test_e2e_dashboard.py     # Dashboard metrics, analyze modal, logs, alerts, settings
-└── README.md                 # Test suite documentation and runner instructions
+├── test_e2e_swagger.py       # Swagger UI documentation interactive validation
+└── README.md                 # Test suite documentation, video recording instructions, and runner guide
 ```
 
 ---
@@ -72,4 +75,60 @@ pytest tests/e2e/test_e2e_dashboard.py -v
 ### Generating JUnit XML Reports (for Jenkins CI/CD)
 ```bash
 pytest tests/e2e -v --junitxml=reports/e2e-results.xml
+```
+
+---
+
+## Automated Video Recording Configuration
+
+The E2E test suite automatically records video of every browser test session in standard H.264/MPEG-4 (`.mp4`) format, complete with a diagnostic HUD (test title, elapsed time, and framerate).
+
+### Retention Modes (via Environment Variables)
+
+| Variable | Values | Description |
+| :--- | :--- | :--- |
+| `RECORD_VIDEO` | `1` or `all` (default) | Records and keeps MP4 videos for all executed tests in `reports/videos/`. |
+| | `failed_only` | Records tests in the background, but immediately deletes videos of passing tests. Only failed test videos are preserved (ideal for CI disk conservation). |
+| | `0` or `off` | Completely disables video recording for rapid local debugging. |
+| `VIDEO_DIR` | e.g. `reports/videos` | Target directory where `.mp4` video artifacts are stored. |
+| `VIDEO_FPS` | `10` (default) | Video frame rate (frames per second). |
+| `VIDEO_SPEED` | `1.0` (default) | Playback pacing multiplier. `1.0` = true 1:1 real-time wall-clock speed; `0.5` = 2x slow-motion demo mode (ideal for presentations & human review). |
+| `VIDEO_END_HOLD` | `1.5` (default) | Dwell duration in seconds to freeze the final frame with `[PASSED]` / `[FAILED]` status badge before closing the video. |
+
+### Running with Custom Video Flags
+
+```bash
+# Record all tests (default behavior)
+pytest tests/e2e -v
+
+# Keep video recordings ONLY for failed tests
+RECORD_VIDEO=failed_only pytest tests/e2e -v
+
+# Disable video recording
+RECORD_VIDEO=0 pytest tests/e2e -v
+```
+
+In Windows PowerShell:
+```powershell
+# Only record failures
+$env:RECORD_VIDEO="failed_only"; pytest tests/e2e -v
+
+# Disable recording
+$env:RECORD_VIDEO="0"; pytest tests/e2e -v
+```
+
+### Viewing Recorded Videos
+Saved video files can be played with any standard media player (VLC, Windows Media Player, QuickTime) or embedded directly in browser reports and CI artifacts.
+
+Each test execution session creates a dedicated timestamped subdirectory to preserve run history:
+```text
+reports/videos/run_<YYYYMMDD_HHMMSS>/<test_function_name>.mp4
+```
+
+For example:
+```text
+reports/videos/run_20261122_225200/
+├── test_login_page_renders_elements.mp4
+├── test_password_visibility_toggle.mp4
+└── ...
 ```
