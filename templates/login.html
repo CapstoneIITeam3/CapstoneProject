@@ -195,8 +195,8 @@
         {% endif %}
 
         <div class="anim" style="animation-delay:.5s">
-          <label for="username">Username or Email</label>
-          <div class="field"><input id="username" name="username" autocomplete="username" placeholder="Your username or email" required autofocus value="{{ request.form.username or '' }}"></div>
+          <label for="username">Email Address</label>
+          <div class="field"><input id="username" name="email" type="text" autocomplete="email" placeholder="name@domain.com (e.g. testadmin@threatwatch.local)" required autofocus value="{{ request.form.email or request.form.username or '' }}"></div>
         </div>
 
         <div class="anim" style="animation-delay:.58s">

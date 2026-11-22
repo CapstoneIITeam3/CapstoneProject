@@ -455,6 +455,17 @@ def login():
             email = (request.form.get("email") or request.form.get("username") or "").strip().lower()
             password = request.form.get("password", "")
 
+            # Strict email format validation: reject any non-email string or invalid format
+            import re
+            EMAIL_REGEX = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+            if not email or not re.match(EMAIL_REGEX, email):
+                _failed[ip] = (
+                    cnt + 1 if time.time() - t0 < 60 else 1,
+                    t0 if time.time() - t0 < 60 else time.time(),
+                )
+                error = "Email is not valid. Please enter a valid email address format (e.g. name@domain.com)."
+                return render_template("login.html", error=error), 401
+
             # Authenticate strictly via Firebase Authentication
             authenticated = False
             user = None

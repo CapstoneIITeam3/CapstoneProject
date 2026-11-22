@@ -102,3 +102,21 @@ def test_logout_unauthenticated_redirect(client):
     resp = client.post("/logout")
     # CSRF check blocks with 400, or unauthorized redirects to login view (302/401)
     assert resp.status_code in (400, 401, 302)
+
+
+def test_login_invalid_email_format(client):
+    """Verify login rejects usernames or strings that do not conform to email format."""
+    get_resp = client.get("/login")
+    from tests.test_auth import _extract_csrf
+    csrf = _extract_csrf(get_resp.get_data(as_text=True))
+
+    post_resp = client.post(
+        "/login",
+        data={
+            "username": "non_email_user_format",
+            "password": "WrongPassword#123",
+            "_csrf": csrf,
+        },
+    )
+    assert post_resp.status_code == 401
+    assert b"Email is not valid" in post_resp.data
