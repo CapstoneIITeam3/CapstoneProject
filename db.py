@@ -1,6 +1,9 @@
 import os
+import time
 import logging
+import certifi
 from pymongo import MongoClient, ASCENDING, DESCENDING
+from pymongo.read_preferences import ReadPreference
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,22 +14,45 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/ai_ids_db")
 DB_NAME = os.getenv("MONGO_DB_NAME", "ai_ids_db")
 
 is_mock_db = False
-try:
-    is_atlas = "mongodb+srv://" in MONGO_URI or "mongodb.net" in MONGO_URI
-    timeout_ms = 30000 if is_atlas else 1500
-    client = MongoClient(
-        MONGO_URI,
-        serverSelectionTimeoutMS=timeout_ms,
-    )
-    client.admin.command("ping")
-    safe_target = MONGO_URI.split("@")[-1] if "@" in MONGO_URI else MONGO_URI
-    log.info("Connected to MongoDB at %s", safe_target)
-except Exception as e:
-    safe_target = MONGO_URI.split("@")[-1] if "@" in MONGO_URI else MONGO_URI
-    log.warning("MongoDB daemon unreachable at %s (%s). Enabling in-memory data store fallback via mongomock.", safe_target, e)
-    import mongomock
-    client = mongomock.MongoClient()
-    is_mock_db = True
+client = None
+
+is_atlas = "mongodb+srv://" in MONGO_URI or "mongodb.net" in MONGO_URI
+max_retries = 3 if is_atlas else 1
+
+for attempt in range(1, max_retries + 1):
+    try:
+        kwargs = {
+            "serverSelectionTimeoutMS": 10000 if is_atlas else 1500,
+            "connectTimeoutMS": 8000,
+            "socketTimeoutMS": 12000,
+            "retryWrites": True,
+            "retryReads": True,
+        }
+        if is_atlas:
+            kwargs["tlsCAFile"] = certifi.where()
+            kwargs["readPreference"] = "primaryPreferred"
+
+        candidate_client = MongoClient(MONGO_URI, **kwargs)
+        candidate_client.admin.command("ping", read_preference=ReadPreference.PRIMARY_PREFERRED)
+        client = candidate_client
+        safe_target = MONGO_URI.split("@")[-1] if "@" in MONGO_URI else MONGO_URI
+        log.info("Connected to MongoDB at %s (attempt %d/%d)", safe_target, attempt, max_retries)
+        break
+    except Exception as e:
+        safe_target = MONGO_URI.split("@")[-1] if "@" in MONGO_URI else MONGO_URI
+        if attempt < max_retries:
+            log.warning("MongoDB connect attempt %d failed (%s). Retrying in 2s...", attempt, e)
+            time.sleep(2)
+        else:
+            log.warning(
+                "MongoDB unreachable after %d attempts at %s (%s). Enabling in-memory data store fallback via mongomock.",
+                max_retries,
+                safe_target,
+                e,
+            )
+            import mongomock
+            client = mongomock.MongoClient()
+            is_mock_db = True
 
 db = client[DB_NAME]
 
@@ -71,5 +97,5 @@ def check_database_connection():
     """Verify MongoDB connectivity."""
     if is_mock_db:
         return True
-    client.admin.command("ping")
+    client.admin.command("ping", read_preference=ReadPreference.PRIMARY_PREFERRED)
     return True
