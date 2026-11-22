@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in · ThreatWatch</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27><path fill=%27%23E98AE0%27 d=%27M12 2 3 6v6c0 5 3.8 9.7 9 10 5.2-.3 9-5 9-10V6z%27/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --panel: #090909; --field: #080808; --line: #222; --line-2: #2c2c2c;
+      --text: #f2f1f4; --text-2: #a9a7b0; --text-3: #6e6c75;
+      --pink: #E98AE0; --link: #F29AD9; --violet: #9b7bff; --lilac: #c9b3ff;
+      --danger: #ff8a9a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #000; color: var(--text);
+      font: 14px/1.45 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: var(--link); }
+    .page { display: grid; grid-template-columns: minmax(420px, 1fr) 1fr; min-height: 100vh; padding: 14px; gap: 0; }
+
+    /* ---------------- left: auth panel ---------------- */
+    .auth { background: var(--panel); border: 1px solid #161616; border-radius: 18px 0 0 18px; padding: 28px 36px;
+      display: flex; flex-direction: column; min-height: calc(100vh - 28px); }
+    .auth-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 500; letter-spacing: -0.02em; color: var(--text); text-decoration: none; }
+    .brand b { font-weight: 300; }
+    .status { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2);
+      background: #0e0e0e; border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px; white-space: nowrap; }
+    .status i { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+    .status.ok i { background: #3ddc84; box-shadow: 0 0 0 3px rgba(61,220,132,.15); }
+    .status.down i { background: #ff5c6c; box-shadow: 0 0 0 3px rgba(255,92,108,.15); }
+
+    .form-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 40px 0; }
+    form { width: 100%; max-width: 318px; display: flex; flex-direction: column; }
+    h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.02em; margin: 0 0 6px; }
+    .lede { color: var(--text-2); font-size: 13px; margin: 0 0 26px; }
+    .notice { display: flex; gap: 10px; align-items: center; padding: 11px 13px; margin-bottom: 4px;
+      border: 1px solid var(--line); border-radius: 9px; background: #0c0c0c; color: var(--text-2); font-size: 12.5px; }
+    .notice svg { flex: none; color: var(--pink); }
+    .divider { display: flex; align-items: center; gap: 12px; color: var(--text-3); font-size: 11px; letter-spacing: .12em; margin: 20px 0 18px; }
+    .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+    label { font-size: 13px; font-weight: 500; color: var(--text); display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 7px; }
+    label button { all: unset; cursor: pointer; color: var(--link); font-size: 12px; font-weight: 500; text-decoration: underline; text-underline-offset: 3px; }
+    label button:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; border-radius: 3px; }
+    .field { position: relative; margin-bottom: 18px; }
+    .field input { width: 100%; height: 42px; padding: 0 14px; font: inherit; font-size: 13.5px; color: var(--text);
+      background: var(--field); border: 1px solid var(--line-2); border-radius: 9px; outline: none; transition: border-color .2s, box-shadow .2s; }
+    .field input::placeholder { color: #55535b; }
+    .field input:hover { border-color: #3a3a3a; }
+    .field input:focus { border-color: var(--pink); box-shadow: 0 0 0 3px rgba(233,138,224,.18); }
+    .field input.pw { padding-right: 44px; }
+    .eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; border: 0; background: none;
+      color: var(--text-3); cursor: pointer; border-radius: 6px; display: grid; place-items: center; }
+    .eye:hover { color: var(--text); }
+    .eye:focus-visible { outline: 2px solid var(--pink); }
+    .hint { font-size: 12px; color: var(--text-2); background: #0e0d10; border: 1px solid #2a2230; border-radius: 8px; padding: 9px 12px; margin: -8px 0 16px; }
+    .hint[hidden] { display: none; }
+    .submit { height: 44px; margin-top: 8px; border-radius: 9px; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer;
+      border: 1px solid transparent; color: #1a0b19; background: linear-gradient(90deg, #f2a6e6, var(--pink) 55%, #c58cf2);
+      box-shadow: 0 8px 28px -10px rgba(233,138,224,.7); transition: filter .2s, transform .1s, box-shadow .2s; }
+    .submit:hover:not(:disabled) { filter: brightness(1.07); }
+    .submit:active:not(:disabled) { transform: translateY(1px); }
+    .submit:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    .submit:disabled { cursor: not-allowed; background: #141414; color: #4d4b52; border-color: #1f1f1f; box-shadow: none; }
+    .error { margin-top: 14px; padding: 10px 12px; border-radius: 8px; font-size: 13px; color: var(--danger);
+      background: rgba(255,92,108,.07); border: 1px solid rgba(255,92,108,.3); display: flex; gap: 8px; align-items: center; }
+    .foot { text-align: center; font-size: 12.5px; color: var(--text-3); margin-top: 22px; }
+    .foot b { color: var(--text-2); font-weight: 500; }
+    .legal { font-size: 11.5px; color: var(--text-3); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+    /* ---------------- Google & Firebase UI ---------------- */
+    .google-btn { width: 100%; height: 42px; margin-top: 14px; border-radius: 9px; font: inherit; font-weight: 500; font-size: 13.5px;
+      cursor: pointer; border: 1px solid var(--line-2); background: #0e0e12; color: var(--text); display: flex; align-items: center; justify-content: center;
+      gap: 10px; transition: background .2s, border-color .2s, transform .1s; }
+    .google-btn:hover { background: #18171f; border-color: #3e3b48; }
+    .google-btn:active { transform: translateY(1px); }
+    .google-btn:focus-visible { outline: 2px solid var(--pink); outline-offset: 2px; }
+    .status-msg { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 12.5px; display: none; }
+    .status-msg.ok { display: flex; gap: 8px; align-items: center; color: #3ddc84; background: rgba(61,220,132,.08); border: 1px solid rgba(61,220,132,.25); }
+    .status-msg.err { display: flex; gap: 8px; align-items: center; color: var(--danger); background: rgba(255,92,108,.08); border: 1px solid rgba(255,92,108,.25); }
+
+    /* Modal Backdrop for Password Recovery */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.75); backdrop-filter: blur(5px);
+      display: none; align-items: center; justify-content: center; z-index: 999; }
+    .modal-box { background: #0c0c10; border: 1px solid var(--line-2); border-radius: 14px; padding: 26px 28px; width: 90%; max-width: 380px;
+      box-shadow: 0 16px 44px rgba(0,0,0,.9); position: relative; }
+    .modal-box h2 { margin: 0 0 6px; font-size: 18px; font-weight: 500; }
+    .modal-box p { margin: 0 0 18px; font-size: 12.5px; color: var(--text-2); line-height: 1.45; }
+    .modal-close { position: absolute; top: 18px; right: 18px; background: none; border: none; color: var(--text-3); cursor: pointer; font-size: 18px; }
+    .modal-close:hover { color: var(--text); }
+
+    /* ---------------- right: showcase ---------------- */
+    .show { position: relative; overflow: hidden; border-radius: 0 18px 18px 0; border: 1px solid #161616; border-left: 0;
+      background: linear-gradient(180deg, #000 0%, #05030a 38%, #120a24 72%, #1d0d33 100%);
+      display: flex; flex-direction: column; align-items: center; padding: 9vh 32px 0; }
+    .show::after { /* floor glow */
+      content: ""; position: absolute; left: 50%; bottom: -18%; width: 120%; height: 46%; transform: translateX(-50%);
+      background: radial-gradient(closest-side, rgba(233,80,210,.45), rgba(150,60,220,.18) 55%, transparent 75%); pointer-events: none; }
+    .headline { position: relative; z-index: 2; text-align: center; font-size: clamp(24px, 2.3vw, 33px); font-weight: 500;
+      letter-spacing: -0.025em; line-height: 1.18; margin: 0; max-width: 560px; }
+    .headline .w { display: inline-block; }
+    .grad { background: linear-gradient(90deg, #ff9ce9 0%, #e98ae0 35%, #c9b3ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+      filter: drop-shadow(0 0 18px rgba(233,138,224,.35)); }
+    .pill-wrap { position: relative; z-index: 2; align-self: flex-end; margin: 18px 12% 0 0; display: flex; flex-direction: column; align-items: flex-start; }
+    .pointer { width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 12px solid var(--pink);
+      transform: rotate(-28deg); margin: 0 0 -3px -6px; filter: drop-shadow(0 0 6px rgba(233,138,224,.6)); }
+    .pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 7px; font-size: 13px; font-weight: 500; color: #2a0b27;
+      background: linear-gradient(90deg, #ffa6ea, #e98ae0); box-shadow: 0 6px 24px -6px rgba(233,138,224,.8); }
+    .pill i { width: 6px; height: 6px; border-radius: 50%; background: #2a0b27; animation: blink 1.6s ease-in-out infinite; }
+    @keyframes blink { 50% { opacity: .25; } }
+    .scene { position: relative; z-index: 1; width: min(100%, 540px); margin: auto 0 64px; }
+    .scene svg { display: block; width: 100%; height: auto; overflow: visible; }
+    .ghost { position: absolute; z-index: 0; left: 50%; top: 52%; transform: translate(-50%, -50%); font-size: min(30vw, 420px); font-weight: 600;
+      letter-spacing: -0.06em; color: transparent; -webkit-text-stroke: 1.5px rgba(255,255,255,.05); line-height: .8; pointer-events: none; user-select: none; }
+    .tags { position: absolute; z-index: 2; inset: auto 0 22px; display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; padding: 0 20px; }
+    .tags span { font-size: 11.5px; color: #d9c9ef; padding: 5px 10px; border-radius: 999px; background: rgba(20,10,35,.55);
+      border: 1px solid rgba(201,179,255,.18); backdrop-filter: blur(6px); }
+
+    /* ---------------- motion (~1.8s entrance) ---------------- */
+    @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+    @keyframes type { from { opacity: 0; transform: translateY(.5em); filter: blur(6px); } to { opacity: 1; transform: none; filter: blur(0); } }
+    @keyframes pop { 0% { opacity: 0; transform: scale(.6); } 70% { transform: scale(1.06); } 100% { opacity: 1; transform: none; } }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: none; } }
+    @keyframes ghost { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes float { 50% { transform: translateY(-6px); } }
+    @keyframes orbit { to { offset-distance: 100%; } }
+    .anim { opacity: 0; animation: rise .6s cubic-bezier(.2,.7,.2,1) forwards; }
+    .headline .w { opacity: 0; animation: type .5s cubic-bezier(.2,.7,.2,1) forwards; }
+    .scene { opacity: 0; animation: fadeUp 1s .7s cubic-bezier(.2,.7,.2,1) forwards; }
+    .ghost { opacity: 0; animation: ghost 1.4s .4s ease forwards; }
+    .pill-wrap { opacity: 0; animation: pop .5s 1.35s cubic-bezier(.3,1.4,.5,1) forwards; }
+    .tags { opacity: 0; animation: rise .6s 1.5s ease forwards; }
+    #robot { animation: float 5s 1.8s ease-in-out infinite; transform-box: fill-box; }
+    @media (prefers-reduced-motion: reduce) {
+      .anim, .headline .w, .scene, .ghost, .pill-wrap, .tags { opacity: 1 !important; animation: none !important; }
+      #robot, .pill i { animation: none !important; }
+    }
+
+    /* ---------------- phone ---------------- */
+    @media (max-width: 860px) {
+      .page { grid-template-columns: 1fr; padding: 0; }
+      .show { display: none; }
+      .auth { border-radius: 0; border: 0; min-height: 100vh; padding: 22px 22px; }
+    }
+    @media (max-width: 480px) {
+      .status { padding: 7px 9px; font-size: 11px; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
+      .status span { overflow: hidden; text-overflow: ellipsis; }
+      .legal { justify-content: center; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <!-- ================= LEFT: log-in ================= -->
+  <section class="auth">
+    <div class="auth-head anim" style="animation-delay:.05s">
+      <a class="brand" href="{{ url_for('login') }}" aria-label="ThreatWatch">
+        <svg width="26" height="28" viewBox="0 0 26 28" aria-hidden="true">
+          <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffa6ea"/><stop offset=".55" stop-color="#E98AE0"/><stop offset="1" stop-color="#8b6cff"/></linearGradient></defs>
+          <path d="M13 1 2 5.5v7.6C2 20 6.8 25.6 13 27c6.2-1.4 11-7 11-13.9V5.5z" fill="url(#lg)"/>
+          <path d="M13 7.5c-3.6 0-6.4 2.6-7.6 6 1.2 3.4 4 6 7.6 6s6.4-2.6 7.6-6c-1.2-3.4-4-6-7.6-6z" fill="#120612" opacity=".85"/>
+          <circle cx="13" cy="13.5" r="3" fill="#ffd6f7"/>
+        </svg><span>Threat<b>Watch</b></span>
+      </a>
+      <span class="status" id="engineStatus" title="Detection engine status"><i></i><span>Checking engine…</span></span>
+    </div>
+
+    <div class="form-wrap">
+      <form method="post" id="loginForm" autocomplete="on" novalidate>
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+        <h1 class="anim" style="animation-delay:.15s">Welcome back!</h1>
+        <p class="lede anim" style="animation-delay:.25s">Log in to ThreatWatch to continue to the security dashboard.</p>
+
+        <div class="notice anim" style="animation-delay:.35s">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 2 3.5v4C2 11.2 4.6 14.3 8 15c3.4-.7 6-3.8 6-7.5v-4z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 8 7.3 9.7 10.5 6.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Restricted to authorised security administrators.
+        </div>
+
+        {% if firebase_enabled %}
+        <button type="button" class="google-btn anim" id="googleSignInBtn" style="animation-delay:.40s">
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+            <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.616z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+            <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"/>
+            <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z"/>
+          </svg>
+          <span>Sign in with Google</span>
+        </button>
+        <div class="divider anim" style="animation-delay:.45s">OR SIGN IN WITH PASSWORD</div>
+        {% else %}
+        <div class="divider anim" style="animation-delay:.42s">ADMIN SIGN-IN</div>
+        {% endif %}
+
+        <div class="anim" style="animation-delay:.5s">
+          <label for="username">Email Address</label>
+          <div class="field"><input id="username" name="email" type="text" autocomplete="email" placeholder="name@domain.com (e.g. testadmin@threatwatch.local)" required autofocus value="{{ request.form.email or request.form.username or '' }}"></div>
+        </div>
+
+        <div class="anim" style="animation-delay:.58s">
+          <label for="password">Password <button type="button" id="forgotBtn" aria-expanded="false" aria-controls="forgotHint">Forgot password?</button></label>
+          <div class="field">
+            <input id="password" name="password" class="pw" type="password" autocomplete="current-password" placeholder="Your password" required>
+            <button type="button" class="eye" id="eyeBtn" aria-label="Show password" aria-pressed="false">
+              <svg id="eyeOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg id="eyeShut" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true" style="display:none"><path d="M3 3l18 18M10.6 5.1A10.8 10.8 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7c1.8 0 3.4-.5 4.8-1.3M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+            </button>
+          </div>
+          <div class="hint" id="forgotHint" hidden>Passwords are reset by your system administrator. Contact them to set a new one.</div>
+        </div>
+
+        <button class="submit anim" type="submit" id="submitBtn" style="animation-delay:.66s" disabled>Log in</button>
+
+        {% if error %}
+        <div class="error" role="alert">
+          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.5v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="11.2" r=".9" fill="currentColor"/></svg>
+          {{ error }}
+        </div>
+        {% endif %}
+
+        <div id="authStatusMsg" class="status-msg"></div>
+
+        <p class="foot anim" style="animation-delay:.74s">Need an account? <button type="button" id="signUpBtn" style="background:none; border:none; color:#ff9ce9; font-weight:600; text-decoration:underline; cursor:pointer; font-size:inherit; padding:0;">Register with Firebase</button></p>
+      </form>
+    </div>
+
+    <div class="legal anim" style="animation-delay:.8s">
+      <span>© ThreatWatch · Team 38 Capstone</span>
+      <span>Every sign-in is logged.</span>
+    </div>
+  </section>
+
+  <!-- ================= RIGHT: showcase ================= -->
+  <section class="show" aria-hidden="true">
+    <div class="ghost">AI</div>
+    <h2 class="headline">
+      <span class="w" style="animation-delay:.35s">50M+</span>
+      <span class="w" style="animation-delay:.43s">logs</span>
+      <span class="w" style="animation-delay:.51s">scanned.</span>
+      <span class="w" style="animation-delay:.59s">Real-time</span>
+      <br><span class="w grad" style="animation-delay:.67s">AI</span>
+      <span class="w grad" style="animation-delay:.8s">threat</span>
+      <span class="w grad" style="animation-delay:.88s">detection.</span>
+    </h2>
+    <div class="pill-wrap">
+      <span class="pointer"></span>
+      <span class="pill"><i></i>Live monitoring</span>
+    </div>
+
+    <div class="scene">
+      <!-- scene coords (cropped viewBox): robot 96 wide, bottom-anchored at y=470, centred at x=216.5 -->
+      <svg viewBox="40 240 341 270" role="presentation">
+        <defs>
+          <linearGradient id="ring" x1="0" x2="1">
+            <stop offset="0" stop-color="#E98AE0" stop-opacity=".15"/>
+            <stop offset=".5" stop-color="#ff9ce9" stop-opacity=".9"/>
+            <stop offset="1" stop-color="#E98AE0" stop-opacity=".15"/>
+          </linearGradient>
+          <radialGradient id="dotGlow"><stop offset="0" stop-color="#fff"/><stop offset=".35" stop-color="#ff9ce9"/><stop offset="1" stop-color="#E98AE0" stop-opacity="0"/></radialGradient>
+          <radialGradient id="padGlow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ff6fe0" stop-opacity=".55"/><stop offset="1" stop-color="#ff6fe0" stop-opacity="0"/></radialGradient>
+          <!-- fallback robot paint -->
+          <linearGradient id="irid" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#ffd3f4"/><stop offset=".3" stop-color="#e7a8ff"/><stop offset=".6" stop-color="#9fb4ff"/><stop offset="1" stop-color="#f3a0e2"/>
+          </linearGradient>
+          <linearGradient id="irid2" x1="1" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#b9c8ff"/><stop offset=".5" stop-color="#e9a6f7"/><stop offset="1" stop-color="#7d6cf0"/>
+          </linearGradient>
+          <linearGradient id="chrome" x1="0" x2="1"><stop offset="0" stop-color="#0d0b12"/><stop offset=".45" stop-color="#3b3446"/><stop offset=".6" stop-color="#1b1722"/><stop offset="1" stop-color="#08070b"/></linearGradient>
+          <radialGradient id="eye"><stop offset="0" stop-color="#fff"/><stop offset=".4" stop-color="#d9c4ff"/><stop offset="1" stop-color="#9b7bff" stop-opacity="0"/></radialGradient>
+          <filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>
+          <path id="orbitPath" d="M 66.5 448 A 150 32 0 1 0 366.5 448 A 150 32 0 1 0 66.5 448"/>
+        </defs>
+
+        <!-- glow under pedestal -->
+        <ellipse cx="216.5" cy="462" rx="120" ry="26" fill="url(#padGlow)" filter="url(#soft)"/>
+
+        <!-- orbit: back half (behind robot) -->
+        <path d="M 66.5 448 A 150 32 0 0 1 366.5 448" fill="none" stroke="url(#ring)" stroke-width="1.6" opacity=".55"/>
+
+        <!-- robot (user-supplied PNG); hidden and replaced by vector fallback if it can't load -->
+        <g id="robot">
+          <image id="robotImg" href="https://d2ol7oe51mr4n9.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/3fd6651e-dc6b-4339-a93a-fb627c0109e0.png"
+                 x="168.5" y="250" width="96" height="220" preserveAspectRatio="xMidYMax meet"/>
+          <g id="robotFallback" style="display:none">
+            <!-- pedestal -->
+            <ellipse cx="216.5" cy="468" rx="40" ry="8" fill="#050407"/>
+            <path d="M176.5 440 v28 a40 8 0 0 0 80 0 v-28z" fill="url(#chrome)"/>
+            <ellipse cx="216.5" cy="440" rx="40" ry="8" fill="#1d1824" stroke="#ff7be3" stroke-width="1.4" stroke-opacity=".9"/>
+            <ellipse cx="216.5" cy="440" rx="40" ry="8" fill="none" stroke="#ff7be3" stroke-width="5" opacity=".25" filter="url(#soft)"/>
+            <!-- legs -->
+            <rect x="200" y="410" width="12" height="28" rx="6" fill="url(#irid2)"/>
+            <rect x="221" y="410" width="12" height="28" rx="6" fill="url(#irid2)"/>
+            <ellipse cx="206" cy="438" rx="10" ry="4.5" fill="url(#irid)"/>
+            <ellipse cx="227" cy="438" rx="10" ry="4.5" fill="url(#irid)"/>
+            <!-- arms -->
+            <rect x="182" y="365" width="13" height="38" rx="6.5" fill="url(#irid2)" transform="rotate(10 188 366)"/>
+            <rect x="238" y="365" width="13" height="38" rx="6.5" fill="url(#irid2)" transform="rotate(-10 244 366)"/>
+            <!-- body -->
+            <rect x="192" y="356" width="49" height="60" rx="20" fill="url(#irid)"/>
+            <path d="M200 364 q8 -5 22 -2" stroke="#fff" stroke-opacity=".7" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <circle cx="216.5" cy="388" r="6" fill="#140b22" stroke="#c9b3ff" stroke-opacity=".6"/>
+            <circle cx="216.5" cy="388" r="2.2" fill="#e98ae0"/>
+            <!-- antenna -->
+            <line x1="216.5" y1="290" x2="216.5" y2="274" stroke="#d7c3ff" stroke-width="2"/>
+            <circle cx="216.5" cy="271" r="5" fill="url(#irid)"/>
+            <circle cx="216.5" cy="271" r="9" fill="#ff9ce9" opacity=".35" filter="url(#soft)"/>
+            <!-- ears -->
+            <ellipse cx="173" cy="322" rx="7" ry="13" fill="url(#irid2)"/>
+            <ellipse cx="260" cy="322" rx="7" ry="13" fill="url(#irid2)"/>
+            <!-- head -->
+            <rect x="176" y="288" width="81" height="66" rx="30" fill="url(#irid)"/>
+            <path d="M186 300 q14 -10 36 -8" stroke="#fff" stroke-opacity=".8" stroke-width="3" fill="none" stroke-linecap="round"/>
+            <!-- visor -->
+            <rect x="186" y="304" width="61" height="38" rx="18" fill="#0b0814"/>
+            <rect x="186" y="304" width="61" height="38" rx="18" fill="none" stroke="#c9b3ff" stroke-opacity=".35"/>
+            <ellipse cx="204" cy="323" rx="8" ry="9" fill="url(#eye)"/>
+            <ellipse cx="229" cy="323" rx="8" ry="9" fill="url(#eye)"/>
+            <ellipse cx="204" cy="323" rx="3.2" ry="4.4" fill="#f1e8ff"/>
+            <ellipse cx="229" cy="323" rx="3.2" ry="4.4" fill="#f1e8ff"/>
+          </g>
+        </g>
+
+        <!-- orbit: front half (in front of pedestal) -->
+        <path d="M 366.5 448 A 150 32 0 0 1 66.5 448" fill="none" stroke="url(#ring)" stroke-width="2"/>
+        <!-- glowing dot on the front of the ring -->
+        <g>
+          <circle cx="322" cy="470.5" r="14" fill="url(#dotGlow)" opacity=".7"/>
+          <circle cx="322" cy="470.5" r="4.2" fill="#ffe6fa"/>
+        </g>
+      </svg>
+    </div>
+
+    <div class="tags">
+      <span>Isolation Forest</span><span>Random Forest</span><span>NSL-KDD</span><span>Instant alerts</span>
+    </div>
+  </section>
+</div>
+
+<!-- Password Reset Modal Dialog -->
+<div class="modal-backdrop" id="forgotModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="modalCloseBtn" aria-label="Close dialog">&times;</button>
+    <h2 id="modalTitle">Reset Password</h2>
+    <p>Enter your registered administrator email address. We will dispatch an automated password recovery link directly to your inbox via Firebase.</p>
+    <div class="field" style="margin-bottom:14px;">
+      <input type="email" id="resetEmail" placeholder="your.name@niituniversity.in" autocomplete="email">
+    </div>
+    <button type="button" class="submit" id="sendResetBtn" style="width:100%; margin-top:0;">Send Reset Link</button>
+    <div id="modalStatusMsg" class="status-msg" style="margin-top:12px;"></div>
+  </div>
+</div>
+
+<!-- Sign Up Modal Dialog -->
+<div class="modal-backdrop" id="signUpModal" role="dialog" aria-modal="true" aria-labelledby="signUpTitle">
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="signUpCloseBtn" aria-label="Close dialog">&times;</button>
+    <h2 id="signUpTitle">Register with Firebase</h2>
+    <p>Create an administrator account using your email and password to access ThreatWatch via Firebase Authentication.</p>
+    <div class="field" style="margin-bottom:12px;">
+      <input type="email" id="regEmail" placeholder="e.g. analyst@threatwatch.local" autocomplete="email">
+    </div>
+    <div class="field" style="margin-bottom:8px;">
+      <input type="password" id="regPassword" placeholder="Strong password (min 8 characters)" autocomplete="new-password">
+    </div>
+    <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-bottom:14px; line-height:1.4;">
+      Password must be &ge;8 chars with uppercase, lowercase, digit, and special character (!@#$%^&*).
+    </div>
+    <button type="button" class="submit" id="submitRegBtn" style="width:100%; margin-top:0;">Create Account & Sign In</button>
+    <div id="signUpStatusMsg" class="status-msg" style="margin-top:12px;"></div>
+  </div>
+</div>
+
+{% if firebase_enabled %}
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+{% endif %}
+
+<script>
+(() => {
+  const u = document.getElementById('username'), p = document.getElementById('password'), btn = document.getElementById('submitBtn');
+  const sync = () => { btn.disabled = !(u.value.trim() && p.value); };
+  [u, p].forEach((el) => el.addEventListener('input', sync));
+  sync();
+  // browsers may autofill after load
+  setTimeout(sync, 400);
+
+  const eye = document.getElementById('eyeBtn');
+  eye.addEventListener('click', () => {
+    const show = p.type === 'password';
+    p.type = show ? 'text' : 'password';
+    eye.setAttribute('aria-pressed', String(show));
+    eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    document.getElementById('eyeOpen').style.display = show ? 'none' : '';
+    document.getElementById('eyeShut').style.display = show ? '' : 'none';
+    p.focus();
+  });
+
+  // Password Recovery Modal handlers
+  const fb = document.getElementById('forgotBtn');
+  const modal = document.getElementById('forgotModal');
+  const modalClose = document.getElementById('modalCloseBtn');
+  const sendReset = document.getElementById('sendResetBtn');
+  const resetEmail = document.getElementById('resetEmail');
+  const modalStatus = document.getElementById('modalStatusMsg');
+
+  if (fb && modal) {
+    fb.addEventListener('click', (e) => {
+      e.preventDefault();
+      modal.style.display = 'flex';
+      if (resetEmail) resetEmail.focus();
+    });
+    if (modalClose) {
+      modalClose.addEventListener('click', () => {
+        modal.style.display = 'none';
+        if (modalStatus) modalStatus.style.display = 'none';
+      });
+    }
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.style.display = 'none';
+        if (modalStatus) modalStatus.style.display = 'none';
+      }
+    });
+  }
+
+  // Initialize Firebase client SDK
+  const fbConfig = {{ firebase_config | tojson }};
+  let firebaseAuth = null;
+  if (window.firebase && fbConfig && fbConfig.apiKey) {
+    try {
+      if (!firebase.apps.length) {
+        firebase.initializeApp(fbConfig);
+      }
+      firebaseAuth = firebase.auth();
+    } catch (e) {
+      console.warn("Firebase initialization notice:", e);
+    }
+  }
+
+  // Helper to exchange Firebase ID Token with Flask backend session
+  const authStatus = document.getElementById('authStatusMsg');
+  const googleBtn = document.getElementById('googleSignInBtn');
+
+  async function exchangeTokenAndLogin(idToken) {
+    if (authStatus) {
+      authStatus.className = 'status-msg ok';
+      authStatus.textContent = 'Verifying credentials with server…';
+      authStatus.style.display = 'flex';
+    }
+    try {
+      const res = await fetch('/api/auth/firebase-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: idToken })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (authStatus) {
+          authStatus.className = 'status-msg ok';
+          authStatus.textContent = 'Sign-in successful! Redirecting to dashboard…';
+          authStatus.style.display = 'flex';
+        }
+        window.location.href = data.redirect || '/';
+      } else {
+        if (authStatus) {
+          authStatus.className = 'status-msg err';
+          authStatus.textContent = data.error || 'Authentication failed. Please contact administrator.';
+          authStatus.style.display = 'flex';
+        }
+        if (googleBtn) {
+          googleBtn.disabled = false;
+          googleBtn.style.opacity = '1';
+        }
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Log in';
+        }
+      }
+    } catch (netErr) {
+      if (authStatus) {
+        authStatus.className = 'status-msg err';
+        authStatus.textContent = 'Network communication error while validating login session.';
+        authStatus.style.display = 'flex';
+      }
+      if (googleBtn) {
+        googleBtn.disabled = false;
+        googleBtn.style.opacity = '1';
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Log in';
+      }
+    }
+  }
+
+  // Intercept login form submission: enforce valid email format and authenticate via Firebase
+  const loginForm = document.getElementById('loginForm');
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault(); // Remove fallback: do not submit raw form POST
+    const emailVal = u.value.trim();
+    const passwordVal = p.value;
+
+    // Strict email format validation: without a valid email address format, display error
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailVal || !emailRegex.test(emailVal)) {
+      btn.disabled = false;
+      btn.textContent = 'Log in';
+      if (authStatus) {
+        authStatus.className = 'status-msg err';
+        authStatus.textContent = 'Email is not valid. Please enter a valid email address format (e.g. name@domain.com).';
+        authStatus.style.display = 'flex';
+      }
+      u.focus();
+      return;
+    }
+
+    if (!passwordVal) {
+      btn.disabled = false;
+      btn.textContent = 'Log in';
+      if (authStatus) {
+        authStatus.className = 'status-msg err';
+        authStatus.textContent = 'Please enter your password.';
+        authStatus.style.display = 'flex';
+      }
+      p.focus();
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Signing in via Firebase…';
+    if (authStatus) {
+      authStatus.className = 'status-msg ok';
+      authStatus.textContent = 'Authenticating credentials with Firebase…';
+      authStatus.style.display = 'flex';
+    }
+
+    try {
+      if (!firebaseAuth) {
+        throw new Error("Firebase Authentication is not available. Please verify your network connection.");
+      }
+      const userCred = await firebaseAuth.signInWithEmailAndPassword(emailVal, passwordVal);
+      const idToken = await userCred.user.getIdToken();
+      await exchangeTokenAndLogin(idToken);
+    } catch (err) {
+      console.warn("Firebase signInWithEmailAndPassword error:", err.code, err.message);
+      if (err.code === 'auth/unauthorized-domain' || !firebaseAuth) {
+        // Fall back to server-side Firebase Identity Toolkit authentication
+        loginForm.submit();
+        return;
+      }
+      btn.disabled = false;
+      btn.textContent = 'Log in';
+      if (authStatus) {
+        authStatus.className = 'status-msg err';
+        let msg = err.message || 'Invalid email or password.';
+        if (err.code === 'auth/invalid-email') {
+          msg = 'Email is not valid. Please enter a valid email address.';
+        } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+          msg = 'Invalid email or password. Please verify your credentials or register below.';
+        } else if (err.code === 'auth/too-many-requests') {
+          msg = 'Access temporarily disabled due to many failed attempts. Try again later or reset password.';
+        }
+        authStatus.textContent = msg;
+        authStatus.style.display = 'flex';
+      }
+    }
+  });
+
+  // Sign Up Modal handlers
+  const signUpBtn = document.getElementById('signUpBtn');
+  const signUpModal = document.getElementById('signUpModal');
+  const signUpClose = document.getElementById('signUpCloseBtn');
+  const submitReg = document.getElementById('submitRegBtn');
+  const regEmail = document.getElementById('regEmail');
+  const regPassword = document.getElementById('regPassword');
+  const signUpStatus = document.getElementById('signUpStatusMsg');
+
+  if (signUpBtn && signUpModal) {
+    signUpBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      signUpModal.style.display = 'flex';
+      if (regEmail) regEmail.focus();
+    });
+    if (signUpClose) {
+      signUpClose.addEventListener('click', () => {
+        signUpModal.style.display = 'none';
+        if (signUpStatus) signUpStatus.style.display = 'none';
+      });
+    }
+    signUpModal.addEventListener('click', (e) => {
+      if (e.target === signUpModal) {
+        signUpModal.style.display = 'none';
+        if (signUpStatus) signUpStatus.style.display = 'none';
+      }
+    });
+
+    if (submitReg && firebaseAuth) {
+      submitReg.addEventListener('click', async () => {
+        const email = (regEmail ? regEmail.value : '').trim();
+        const pw = (regPassword ? regPassword.value : '');
+        if (!email || !email.includes('@')) {
+          signUpStatus.className = 'status-msg err';
+          signUpStatus.textContent = 'Please enter a valid email address.';
+          signUpStatus.style.display = 'flex';
+          return;
+        }
+        if (pw.length < 8) {
+          signUpStatus.className = 'status-msg err';
+          signUpStatus.textContent = 'Password must be at least 8 characters long.';
+          signUpStatus.style.display = 'flex';
+          return;
+        }
+
+        submitReg.disabled = true;
+        submitReg.textContent = 'Creating account…';
+        signUpStatus.className = 'status-msg ok';
+        signUpStatus.textContent = 'Registering with Firebase…';
+        signUpStatus.style.display = 'flex';
+
+        try {
+          const userCred = await firebaseAuth.createUserWithEmailAndPassword(email, pw);
+          const idToken = await userCred.user.getIdToken();
+          signUpStatus.className = 'status-msg ok';
+          signUpStatus.textContent = 'Account created! Authenticating session…';
+          signUpStatus.style.display = 'flex';
+          await exchangeTokenAndLogin(idToken);
+        } catch (err) {
+          console.warn("Firebase createUserWithEmailAndPassword error:", err.code, err.message);
+          submitReg.disabled = false;
+          submitReg.textContent = 'Create Account & Sign In';
+          signUpStatus.className = 'status-msg err';
+          let msg = err.message || 'Failed to create account.';
+          if (err.code === 'auth/email-already-in-use') {
+            msg = 'An account already exists with this email. Please sign in instead.';
+          } else if (err.code === 'auth/weak-password') {
+            msg = 'Password is too weak. Please use letters, numbers, and symbols.';
+          }
+          signUpStatus.textContent = msg;
+          signUpStatus.style.display = 'flex';
+        }
+      });
+    }
+  }
+
+  // Handle redirect result if user returned from Google redirect sign-in
+  if (firebaseAuth) {
+    firebaseAuth.getRedirectResult().then(async (result) => {
+      if (result && result.user) {
+        if (googleBtn) {
+          googleBtn.disabled = true;
+          googleBtn.style.opacity = '0.7';
+        }
+        const idToken = await result.user.getIdToken();
+        await exchangeTokenAndLogin(idToken);
+      }
+    }).catch((err) => {
+      console.warn("Firebase getRedirectResult error:", err);
+      if (authStatus && err.code !== 'auth/popup-closed-by-user') {
+        authStatus.className = 'status-msg err';
+        let msg = err.message || 'Google sign-in error occurred.';
+        if (err.code === 'auth/unauthorized-domain') {
+          msg = 'This host is not authorized in Firebase Console. Please access via http://localhost:5000 or add this domain to Firebase Authorized Domains.';
+        }
+        authStatus.textContent = msg;
+        authStatus.style.display = 'flex';
+      }
+    });
+  }
+
+  // Google Sign-In button handler with popup-blocked redirect fallback
+  if (googleBtn) {
+    googleBtn.addEventListener('click', async () => {
+      if (!firebaseAuth) {
+        if (authStatus) {
+          authStatus.className = 'status-msg err';
+          authStatus.textContent = 'Firebase Authentication SDK is unavailable. Please verify your internet connection, disable content blockers for CDN scripts, and refresh.';
+          authStatus.style.display = 'flex';
+        }
+        return;
+      }
+
+      googleBtn.disabled = true;
+      googleBtn.style.opacity = '0.7';
+      if (authStatus) authStatus.style.display = 'none';
+
+      const provider = new firebase.auth.GoogleAuthProvider();
+      provider.addScope('email');
+      provider.addScope('profile');
+      provider.setCustomParameters({ prompt: 'select_account' });
+
+      try {
+        const result = await firebaseAuth.signInWithPopup(provider);
+        const idToken = await result.user.getIdToken();
+        await exchangeTokenAndLogin(idToken);
+      } catch (err) {
+        console.warn("Firebase signInWithPopup result/error:", err.code, err.message);
+
+        // If popup is blocked by browser or cross-origin policy, seamlessly fall back to redirect
+        if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
+          if (authStatus) {
+            authStatus.className = 'status-msg ok';
+            authStatus.textContent = 'Browser popup was blocked. Redirecting to Google Sign-In…';
+            authStatus.style.display = 'flex';
+          }
+          try {
+            await firebaseAuth.signInWithRedirect(provider);
+            return;
+          } catch (redirectErr) {
+            console.error("signInWithRedirect error:", redirectErr);
+            err = redirectErr;
+          }
+        }
+
+        if (err.code !== 'auth/popup-closed-by-user') {
+          if (authStatus) {
+            authStatus.className = 'status-msg err';
+            let msg = err.message || 'Google sign-in error occurred.';
+            if (err.code === 'auth/unauthorized-domain') {
+              msg = 'Domain not authorized in Firebase Console. Please access via http://localhost:5000 or add this domain in Firebase settings.';
+            }
+            authStatus.textContent = msg;
+            authStatus.style.display = 'flex';
+          }
+        }
+        googleBtn.disabled = false;
+        googleBtn.style.opacity = '1';
+      }
+    });
+  }
+
+  // Firebase automated password recovery
+  if (sendReset && firebaseAuth) {
+    sendReset.addEventListener('click', async () => {
+      const email = (resetEmail ? resetEmail.value : '').trim();
+      if (!email || !email.includes('@')) {
+        modalStatus.className = 'status-msg err';
+        modalStatus.textContent = 'Please enter a valid email address.';
+        modalStatus.style.display = 'flex';
+        return;
+      }
+      sendReset.disabled = true;
+      sendReset.textContent = 'Sending link…';
+      try {
+        await firebaseAuth.sendPasswordResetEmail(email);
+        modalStatus.className = 'status-msg ok';
+        modalStatus.textContent = 'Password reset email sent! Check your inbox.';
+        modalStatus.style.display = 'flex';
+        sendReset.textContent = 'Link Sent!';
+        setTimeout(() => {
+          modal.style.display = 'none';
+          modalStatus.style.display = 'none';
+          sendReset.disabled = false;
+          sendReset.textContent = 'Send Reset Link';
+        }, 3500);
+      } catch (err) {
+        modalStatus.className = 'status-msg err';
+        modalStatus.textContent = err.message || 'Unable to send reset email.';
+        modalStatus.style.display = 'flex';
+        sendReset.disabled = false;
+        sendReset.textContent = 'Send Reset Link';
+      }
+    });
+  }
+
+  // robot image: fall back to the vector robot if the hosted PNG can't load (offline demo, blocked CDN)
+  const img = document.getElementById('robotImg'), fallback = document.getElementById('robotFallback');
+  const useFallback = () => { img.style.display = 'none'; fallback.style.display = ''; };
+  img.addEventListener('error', useFallback);
+  const probe = new Image();
+  probe.onerror = useFallback;
+  probe.src = img.getAttribute('href');
+
+  // detection engine status chip (public /api/health)
+  const st = document.getElementById('engineStatus');
+  fetch('/api/health').then((r) => r.json()).then((d) => {
+    const ok = d.status === 'ok';
+    st.classList.add(ok ? 'ok' : 'down');
+    st.lastElementChild.textContent = ok ? `Engine online · ${d.detector.mode}` : 'Engine degraded';
+  }).catch(() => { st.classList.add('down'); st.lastElementChild.textContent = 'Engine unreachable'; });
+})();
+</script>
+</body>
+</html>
