@@ -194,10 +194,15 @@ def set_password(user_id, new_password, enforce_policy=True):
 
 def get_admin_emails():
     """Retrieve set of designated security lead administrator emails."""
-    raw = os.environ.get("ADMIN_EMAILS", "admin@threatwatch.local,testadmin@threatwatch.local")
+    raw = os.environ.get(
+        "ADMIN_EMAILS",
+        "admin@threatwatch.local,testadmin@threatwatch.local,admin1@threatwatch.local,admin2@threatwatch.local",
+    )
     admin_emails = {e.strip().lower() for e in raw.split(",") if e.strip()}
     admin_emails.add("admin@threatwatch.local")
     admin_emails.add("testadmin@threatwatch.local")
+    admin_emails.add("admin1@threatwatch.local")
+    admin_emails.add("admin2@threatwatch.local")
     admin_user = os.environ.get("ADMIN_USER")
     if admin_user and "@" in admin_user:
         admin_emails.add(admin_user.strip().lower())
@@ -220,6 +225,8 @@ def find_or_create_firebase_user(email, uid=None, display_name=None, role=None):
     existing = users_col.find_one({"email": clean_email})
     if existing:
         updates = {"last_login": utcnow()}
+        if clean_email in get_admin_emails():
+            updates["role"] = "admin"
         if uid and not existing.get("firebase_uid"):
             updates["firebase_uid"] = uid
         if not existing.get("auth_provider"):
