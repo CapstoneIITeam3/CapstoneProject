@@ -77,6 +77,7 @@ from models import (
     set_setting,
     utcnow,
 )
+from security import is_sql_injection, sanitize_search_query
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("threatwatch")
@@ -222,6 +223,72 @@ def canonicalize_host():
     if request.method == "GET" and not request.path.startswith("/api/") and (request.host.startswith("127.0.0.1:") or request.host == "127.0.0.1"):
         target_url = request.url.replace("127.0.0.1", "localhost", 1)
         return redirect(target_url, code=302)
+
+
+@app.before_request
+def check_sql_injection():
+    """Inspect query parameters, form data, and JSON bodies for SQL injection attempts."""
+    # 1. Query parameters
+    for param_name, param_val in request.args.items():
+        is_sqli, matched = is_sql_injection(param_val)
+        if is_sqli:
+            log.warning(
+                "SQL injection attempt blocked from IP %s on path %s: query parameter '%s' matched pattern '%s'",
+                request.remote_addr,
+                request.path,
+                param_name,
+                matched,
+            )
+            if request.path.startswith("/api/"):
+                return jsonify(error="Potential SQL injection detected in request input.", code=400), 400
+            return (
+                render_template(
+                    "error.html",
+                    code=400,
+                    message="Potential SQL injection detected in request input.",
+                ),
+                400,
+            )
+
+    # 2. Form data (excluding password which may contain arbitrary special characters)
+    if request.form:
+        for field_name, field_val in request.form.items():
+            if field_name == "password":
+                continue
+            is_sqli, matched = is_sql_injection(field_val)
+            if is_sqli:
+                log.warning(
+                    "SQL injection attempt blocked from IP %s on path %s: form field '%s' matched pattern '%s'",
+                    request.remote_addr,
+                    request.path,
+                    field_name,
+                    matched,
+                )
+                if request.path.startswith("/api/"):
+                    return jsonify(error="Potential SQL injection detected in request input.", code=400), 400
+                return (
+                    render_template(
+                        "error.html",
+                        code=400,
+                        message="Potential SQL injection detected in request input.",
+                    ),
+                    400,
+                )
+
+    # 3. JSON bodies (excluding password and idToken fields)
+    if request.is_json:
+        payload = request.get_json(silent=True)
+        if isinstance(payload, dict):
+            check_payload = {k: v for k, v in payload.items() if k not in ("password", "idToken")}
+            is_sqli, matched = is_sql_injection(check_payload)
+            if is_sqli:
+                log.warning(
+                    "SQL injection attempt blocked from IP %s on path %s: JSON payload matched pattern '%s'",
+                    request.remote_addr,
+                    request.path,
+                    matched,
+                )
+                return jsonify(error="Potential SQL injection detected in request input.", code=400), 400
 
 
 @app.before_request
@@ -1034,7 +1101,7 @@ def _build_log_filter(args):
         filt["result.threat_score"] = score_filter
 
     if args.get("q"):
-        like = args["q"].strip()
+        like = sanitize_search_query(args["q"])
         filt["$or"] = [
             {"src_ip": {"$regex": like, "$options": "i"}},
             {"dst_ip": {"$regex": like, "$options": "i"}},
