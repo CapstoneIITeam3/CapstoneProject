@@ -67,6 +67,7 @@ from models import (
     find_log_by_id,
     find_or_create_firebase_user,
     find_user,
+    find_user_by_email,
     find_user_by_id,
     get_next_sequence,
     get_setting,
@@ -180,6 +181,16 @@ def _valid_api_key():
 
 
 @app.before_request
+def canonicalize_host():
+    """Ensure browser access on 127.0.0.1 is redirected to localhost for Firebase OAuth compatibility."""
+    if app.config.get("TESTING"):
+        return
+    if request.method == "GET" and not request.path.startswith("/api/") and (request.host.startswith("127.0.0.1:") or request.host == "127.0.0.1"):
+        target_url = request.url.replace("127.0.0.1", "localhost", 1)
+        return redirect(target_url, code=302)
+
+
+@app.before_request
 def check_csrf():
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         # API endpoints with valid API key or machine ingestion
@@ -213,15 +224,18 @@ def add_security_headers(response):
     if os.environ.get("HTTPS", "0") == "1":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
+    # Cross-Origin-Opener-Policy allows Firebase OAuth popup communication without context isolation severing opener handle
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+
     # CSP for dashboard assets (Google Fonts, local styles/scripts, Chart.js, inline SVG/data URIs, Firebase SDK & Google APIs)
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com; "
+        "script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://accounts.google.com; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com data:; "
         "img-src 'self' data: https:; "
-        "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; "
-        "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com;"
+        "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://accounts.google.com https://apis.google.com; "
+        "frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://*.google.com;"
     )
     return response
 
@@ -438,23 +452,57 @@ def login():
         if cnt >= 5 and time.time() - t0 < 60:
             error = "Too many failed attempts. Wait a minute and try again."
         else:
-            username = request.form.get("username", "").strip()
+            email = (request.form.get("email") or request.form.get("username") or "").strip().lower()
             password = request.form.get("password", "")
-            user = find_user(username)
-            if user and check_password(user, password):
+
+            # Authenticate strictly via Firebase Authentication
+            authenticated = False
+            user = None
+            if is_firebase_configured():
+                fb_api_key = os.environ.get("FIREBASE_API_KEY")
+                if fb_api_key:
+                    try:
+                        import requests as http_requests
+                        url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={fb_api_key}"
+                        fb_res = http_requests.post(
+                            url,
+                            json={"email": email, "password": password, "returnSecureToken": True},
+                            timeout=6,
+                        )
+                        if fb_res.status_code == 200:
+                            fb_data = fb_res.json()
+                            uid = fb_data.get("localId")
+                            user = find_or_create_firebase_user(
+                                email=email,
+                                uid=uid,
+                                display_name=email.split("@")[0],
+                            )
+                            authenticated = True
+                    except Exception as fb_err:
+                        log.warning("Firebase auth check notice: %s", fb_err)
+
+            # Check provisioned user in database (for offline CI environments or mongomock fixtures)
+            if not authenticated:
+                existing_user = find_user_by_email(email)
+                if existing_user and check_password(existing_user, password):
+                    user = existing_user
+                    authenticated = True
+
+            if authenticated and user:
                 _failed.pop(ip, None)
                 session.clear()
                 session.permanent = True
                 login_user(user)
                 csrf_token()
-                audit("login", f"{user.username} signed in from {ip}", user.id)
+                audit("login", f"{user.username} ({user.email}) signed in from {ip}", user.id)
                 nxt = request.args.get("next", "")
                 return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else url_for("dashboard"))
+
             _failed[ip] = (
                 cnt + 1 if time.time() - t0 < 60 else 1,
                 t0 if time.time() - t0 < 60 else time.time(),
             )
-            error = "Invalid username or password."
+            error = "Invalid email or password."
     return render_template("login.html", error=error), (401 if error else 200)
 
 
@@ -512,7 +560,6 @@ def api_firebase_login():
             email=email,
             uid=uid,
             display_name=name,
-            role="admin",
         )
     except Exception as exc:
         log.error("Failed to provision/sync Firebase user in MongoDB: %s", exc)
@@ -789,6 +836,10 @@ def api_predict():
             "score": round(result_payload["threat_score"], 4),
             "severity": severity,
         },
+        "threat_score": round(result_payload["threat_score"], 4),
+        "tier": label,
+        "anomaly_detected": result_payload.get("anomaly_detected", False),
+        "attack_category": result_payload.get("attack_category", "Normal"),
         "log_id": str(lr_doc["id"]),
         "timestamp": iso(lr_doc["timestamp"]),
     }
@@ -832,6 +883,11 @@ def api_stats():
     ]
     for r in rows:
         ts = r["timestamp"]
+        if hasattr(ts, "tzinfo"):
+            if ts.tzinfo is None and start.tzinfo is not None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            elif ts.tzinfo is not None and start.tzinfo is None:
+                ts = ts.replace(tzinfo=None)
         tier = r.get("result", {}).get("tier")
         if tier in ("Normal", "Suspicious", "Malicious"):
             i = int((ts - start).total_seconds() // (bucket_mins * 60))
@@ -1138,7 +1194,7 @@ def api_health():
     is_healthy = db_ok and not det_status.get("error")
     return (
         jsonify(
-            status="healthy" if is_healthy else "degraded",
+            status="ok" if is_healthy else "degraded",
             service="ThreatWatch AI-IDS",
             database="connected" if db_ok else "disconnected",
             detector=det_status,

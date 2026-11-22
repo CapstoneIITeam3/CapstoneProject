@@ -195,8 +195,8 @@
         {% endif %}
 
         <div class="anim" style="animation-delay:.5s">
-          <label for="username">Username</label>
-          <div class="field"><input id="username" name="username" autocomplete="username" placeholder="Your username" required autofocus value="{{ request.form.username or '' }}"></div>
+          <label for="username">Username or Email</label>
+          <div class="field"><input id="username" name="username" autocomplete="username" placeholder="Your username or email" required autofocus value="{{ request.form.username or '' }}"></div>
         </div>
 
         <div class="anim" style="animation-delay:.58s">
@@ -222,7 +222,7 @@
 
         <div id="authStatusMsg" class="status-msg"></div>
 
-        <p class="foot anim" style="animation-delay:.74s">No account? <b>Ask your administrator</b> for access.</p>
+        <p class="foot anim" style="animation-delay:.74s">Need an account? <button type="button" id="signUpBtn" style="background:none; border:none; color:#ff9ce9; font-weight:600; text-decoration:underline; cursor:pointer; font-size:inherit; padding:0;">Register with Firebase</button></p>
       </form>
     </div>
 
@@ -352,6 +352,26 @@
   </div>
 </div>
 
+<!-- Sign Up Modal Dialog -->
+<div class="modal-backdrop" id="signUpModal" role="dialog" aria-modal="true" aria-labelledby="signUpTitle">
+  <div class="modal-box">
+    <button type="button" class="modal-close" id="signUpCloseBtn" aria-label="Close dialog">&times;</button>
+    <h2 id="signUpTitle">Register with Firebase</h2>
+    <p>Create an administrator account using your email and password to access ThreatWatch via Firebase Authentication.</p>
+    <div class="field" style="margin-bottom:12px;">
+      <input type="email" id="regEmail" placeholder="e.g. analyst@threatwatch.local" autocomplete="email">
+    </div>
+    <div class="field" style="margin-bottom:8px;">
+      <input type="password" id="regPassword" placeholder="Strong password (min 8 characters)" autocomplete="new-password">
+    </div>
+    <div style="font-size:12px; color:rgba(255,255,255,0.6); margin-bottom:14px; line-height:1.4;">
+      Password must be &ge;8 chars with uppercase, lowercase, digit, and special character (!@#$%^&*).
+    </div>
+    <button type="button" class="submit" id="submitRegBtn" style="width:100%; margin-top:0;">Create Account & Sign In</button>
+    <div id="signUpStatusMsg" class="status-msg" style="margin-top:12px;"></div>
+  </div>
+</div>
+
 {% if firebase_enabled %}
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
@@ -405,8 +425,6 @@
     });
   }
 
-  document.getElementById('loginForm').addEventListener('submit', () => { btn.disabled = true; btn.textContent = 'Logging in…'; });
-
   // Initialize Firebase client SDK
   const fbConfig = {{ firebase_config | tojson }};
   let firebaseAuth = null;
@@ -421,44 +439,288 @@
     }
   }
 
-  // Google Sign-In Popup handler
-  const googleBtn = document.getElementById('googleSignInBtn');
+  // Helper to exchange Firebase ID Token with Flask backend session
   const authStatus = document.getElementById('authStatusMsg');
-  if (googleBtn && firebaseAuth) {
-    googleBtn.addEventListener('click', async () => {
-      googleBtn.disabled = true;
-      googleBtn.style.opacity = '0.7';
-      if (authStatus) authStatus.style.display = 'none';
-      try {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        provider.addScope('email');
-        provider.addScope('profile');
-        const result = await firebaseAuth.signInWithPopup(provider);
-        const idToken = await result.user.getIdToken();
+  const googleBtn = document.getElementById('googleSignInBtn');
 
-        // Exchange Firebase ID Token with Flask backend
-        const res = await fetch('/api/auth/firebase-login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ idToken: idToken })
-        });
-        const data = await res.json();
-        if (res.ok && data.success) {
-          window.location.href = data.redirect || '/';
-        } else {
-          if (authStatus) {
-            authStatus.className = 'status-msg err';
-            authStatus.textContent = data.error || 'Authentication failed. Please contact administrator.';
-            authStatus.style.display = 'flex';
-          }
+  async function exchangeTokenAndLogin(idToken) {
+    if (authStatus) {
+      authStatus.className = 'status-msg ok';
+      authStatus.textContent = 'Verifying credentials with server…';
+      authStatus.style.display = 'flex';
+    }
+    try {
+      const res = await fetch('/api/auth/firebase-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: idToken })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (authStatus) {
+          authStatus.className = 'status-msg ok';
+          authStatus.textContent = 'Sign-in successful! Redirecting to dashboard…';
+          authStatus.style.display = 'flex';
+        }
+        window.location.href = data.redirect || '/';
+      } else {
+        if (authStatus) {
+          authStatus.className = 'status-msg err';
+          authStatus.textContent = data.error || 'Authentication failed. Please contact administrator.';
+          authStatus.style.display = 'flex';
+        }
+        if (googleBtn) {
           googleBtn.disabled = false;
           googleBtn.style.opacity = '1';
         }
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = 'Log in';
+        }
+      }
+    } catch (netErr) {
+      if (authStatus) {
+        authStatus.className = 'status-msg err';
+        authStatus.textContent = 'Network communication error while validating login session.';
+        authStatus.style.display = 'flex';
+      }
+      if (googleBtn) {
+        googleBtn.disabled = false;
+        googleBtn.style.opacity = '1';
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Log in';
+      }
+    }
+  }
+
+  // Intercept login form submission: enforce valid email format and authenticate via Firebase
+  const loginForm = document.getElementById('loginForm');
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault(); // Remove fallback: do not submit raw form POST
+    const emailVal = u.value.trim();
+    const passwordVal = p.value;
+
+    // Strict email format validation: without a valid email address format, display error
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailVal || !emailRegex.test(emailVal)) {
+      btn.disabled = false;
+      btn.textContent = 'Log in';
+      if (authStatus) {
+        authStatus.className = 'status-msg err';
+        authStatus.textContent = 'Email is not valid. Please enter a valid email address format (e.g. name@domain.com).';
+        authStatus.style.display = 'flex';
+      }
+      u.focus();
+      return;
+    }
+
+    if (!passwordVal) {
+      btn.disabled = false;
+      btn.textContent = 'Log in';
+      if (authStatus) {
+        authStatus.className = 'status-msg err';
+        authStatus.textContent = 'Please enter your password.';
+        authStatus.style.display = 'flex';
+      }
+      p.focus();
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Signing in via Firebase…';
+    if (authStatus) {
+      authStatus.className = 'status-msg ok';
+      authStatus.textContent = 'Authenticating credentials with Firebase…';
+      authStatus.style.display = 'flex';
+    }
+
+    try {
+      if (!firebaseAuth) {
+        throw new Error("Firebase Authentication is not available. Please verify your network connection.");
+      }
+      const userCred = await firebaseAuth.signInWithEmailAndPassword(emailVal, passwordVal);
+      const idToken = await userCred.user.getIdToken();
+      await exchangeTokenAndLogin(idToken);
+    } catch (err) {
+      console.warn("Firebase signInWithEmailAndPassword error:", err.code, err.message);
+      if (err.code === 'auth/unauthorized-domain' || !firebaseAuth) {
+        // Fall back to server-side Firebase Identity Toolkit authentication
+        loginForm.submit();
+        return;
+      }
+      btn.disabled = false;
+      btn.textContent = 'Log in';
+      if (authStatus) {
+        authStatus.className = 'status-msg err';
+        let msg = err.message || 'Invalid email or password.';
+        if (err.code === 'auth/invalid-email') {
+          msg = 'Email is not valid. Please enter a valid email address.';
+        } else if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+          msg = 'Invalid email or password. Please verify your credentials or register below.';
+        } else if (err.code === 'auth/too-many-requests') {
+          msg = 'Access temporarily disabled due to many failed attempts. Try again later or reset password.';
+        }
+        authStatus.textContent = msg;
+        authStatus.style.display = 'flex';
+      }
+    }
+  });
+
+  // Sign Up Modal handlers
+  const signUpBtn = document.getElementById('signUpBtn');
+  const signUpModal = document.getElementById('signUpModal');
+  const signUpClose = document.getElementById('signUpCloseBtn');
+  const submitReg = document.getElementById('submitRegBtn');
+  const regEmail = document.getElementById('regEmail');
+  const regPassword = document.getElementById('regPassword');
+  const signUpStatus = document.getElementById('signUpStatusMsg');
+
+  if (signUpBtn && signUpModal) {
+    signUpBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      signUpModal.style.display = 'flex';
+      if (regEmail) regEmail.focus();
+    });
+    if (signUpClose) {
+      signUpClose.addEventListener('click', () => {
+        signUpModal.style.display = 'none';
+        if (signUpStatus) signUpStatus.style.display = 'none';
+      });
+    }
+    signUpModal.addEventListener('click', (e) => {
+      if (e.target === signUpModal) {
+        signUpModal.style.display = 'none';
+        if (signUpStatus) signUpStatus.style.display = 'none';
+      }
+    });
+
+    if (submitReg && firebaseAuth) {
+      submitReg.addEventListener('click', async () => {
+        const email = (regEmail ? regEmail.value : '').trim();
+        const pw = (regPassword ? regPassword.value : '');
+        if (!email || !email.includes('@')) {
+          signUpStatus.className = 'status-msg err';
+          signUpStatus.textContent = 'Please enter a valid email address.';
+          signUpStatus.style.display = 'flex';
+          return;
+        }
+        if (pw.length < 8) {
+          signUpStatus.className = 'status-msg err';
+          signUpStatus.textContent = 'Password must be at least 8 characters long.';
+          signUpStatus.style.display = 'flex';
+          return;
+        }
+
+        submitReg.disabled = true;
+        submitReg.textContent = 'Creating account…';
+        signUpStatus.className = 'status-msg ok';
+        signUpStatus.textContent = 'Registering with Firebase…';
+        signUpStatus.style.display = 'flex';
+
+        try {
+          const userCred = await firebaseAuth.createUserWithEmailAndPassword(email, pw);
+          const idToken = await userCred.user.getIdToken();
+          signUpStatus.className = 'status-msg ok';
+          signUpStatus.textContent = 'Account created! Authenticating session…';
+          signUpStatus.style.display = 'flex';
+          await exchangeTokenAndLogin(idToken);
+        } catch (err) {
+          console.warn("Firebase createUserWithEmailAndPassword error:", err.code, err.message);
+          submitReg.disabled = false;
+          submitReg.textContent = 'Create Account & Sign In';
+          signUpStatus.className = 'status-msg err';
+          let msg = err.message || 'Failed to create account.';
+          if (err.code === 'auth/email-already-in-use') {
+            msg = 'An account already exists with this email. Please sign in instead.';
+          } else if (err.code === 'auth/weak-password') {
+            msg = 'Password is too weak. Please use letters, numbers, and symbols.';
+          }
+          signUpStatus.textContent = msg;
+          signUpStatus.style.display = 'flex';
+        }
+      });
+    }
+  }
+
+  // Handle redirect result if user returned from Google redirect sign-in
+  if (firebaseAuth) {
+    firebaseAuth.getRedirectResult().then(async (result) => {
+      if (result && result.user) {
+        if (googleBtn) {
+          googleBtn.disabled = true;
+          googleBtn.style.opacity = '0.7';
+        }
+        const idToken = await result.user.getIdToken();
+        await exchangeTokenAndLogin(idToken);
+      }
+    }).catch((err) => {
+      console.warn("Firebase getRedirectResult error:", err);
+      if (authStatus && err.code !== 'auth/popup-closed-by-user') {
+        authStatus.className = 'status-msg err';
+        let msg = err.message || 'Google sign-in error occurred.';
+        if (err.code === 'auth/unauthorized-domain') {
+          msg = 'This host is not authorized in Firebase Console. Please access via http://localhost:5000 or add this domain to Firebase Authorized Domains.';
+        }
+        authStatus.textContent = msg;
+        authStatus.style.display = 'flex';
+      }
+    });
+  }
+
+  // Google Sign-In button handler with popup-blocked redirect fallback
+  if (googleBtn) {
+    googleBtn.addEventListener('click', async () => {
+      if (!firebaseAuth) {
+        if (authStatus) {
+          authStatus.className = 'status-msg err';
+          authStatus.textContent = 'Firebase Authentication SDK is unavailable. Please verify your internet connection, disable content blockers for CDN scripts, and refresh.';
+          authStatus.style.display = 'flex';
+        }
+        return;
+      }
+
+      googleBtn.disabled = true;
+      googleBtn.style.opacity = '0.7';
+      if (authStatus) authStatus.style.display = 'none';
+
+      const provider = new firebase.auth.GoogleAuthProvider();
+      provider.addScope('email');
+      provider.addScope('profile');
+      provider.setCustomParameters({ prompt: 'select_account' });
+
+      try {
+        const result = await firebaseAuth.signInWithPopup(provider);
+        const idToken = await result.user.getIdToken();
+        await exchangeTokenAndLogin(idToken);
       } catch (err) {
+        console.warn("Firebase signInWithPopup result/error:", err.code, err.message);
+
+        // If popup is blocked by browser or cross-origin policy, seamlessly fall back to redirect
+        if (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request') {
+          if (authStatus) {
+            authStatus.className = 'status-msg ok';
+            authStatus.textContent = 'Browser popup was blocked. Redirecting to Google Sign-In…';
+            authStatus.style.display = 'flex';
+          }
+          try {
+            await firebaseAuth.signInWithRedirect(provider);
+            return;
+          } catch (redirectErr) {
+            console.error("signInWithRedirect error:", redirectErr);
+            err = redirectErr;
+          }
+        }
+
         if (err.code !== 'auth/popup-closed-by-user') {
           if (authStatus) {
             authStatus.className = 'status-msg err';
-            authStatus.textContent = err.message || 'Google sign-in error occurred.';
+            let msg = err.message || 'Google sign-in error occurred.';
+            if (err.code === 'auth/unauthorized-domain') {
+              msg = 'Domain not authorized in Firebase Console. Please access via http://localhost:5000 or add this domain in Firebase settings.';
+            }
+            authStatus.textContent = msg;
             authStatus.style.display = 'flex';
           }
         }
