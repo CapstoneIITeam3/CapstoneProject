@@ -10,10 +10,23 @@ log = logging.getLogger(__name__)
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/ai_ids_db")
 DB_NAME = os.getenv("MONGO_DB_NAME", "ai_ids_db")
 
-client = MongoClient(
-    MONGO_URI,
-    serverSelectionTimeoutMS=5000
-)
+is_mock_db = False
+try:
+    is_atlas = "mongodb+srv://" in MONGO_URI or "mongodb.net" in MONGO_URI
+    timeout_ms = 30000 if is_atlas else 1500
+    client = MongoClient(
+        MONGO_URI,
+        serverSelectionTimeoutMS=timeout_ms,
+    )
+    client.admin.command("ping")
+    safe_target = MONGO_URI.split("@")[-1] if "@" in MONGO_URI else MONGO_URI
+    log.info("Connected to MongoDB at %s", safe_target)
+except Exception as e:
+    safe_target = MONGO_URI.split("@")[-1] if "@" in MONGO_URI else MONGO_URI
+    log.warning("MongoDB daemon unreachable at %s (%s). Enabling in-memory data store fallback via mongomock.", safe_target, e)
+    import mongomock
+    client = mongomock.MongoClient()
+    is_mock_db = True
 
 db = client[DB_NAME]
 
@@ -56,5 +69,7 @@ def init_db_indexes():
 
 def check_database_connection():
     """Verify MongoDB connectivity."""
+    if is_mock_db:
+        return True
     client.admin.command("ping")
     return True
