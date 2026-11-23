@@ -7,11 +7,22 @@ pipeline {
         timestamps()
     }
 
+    // Build automatically on every push to GitHub (via the webhook -> ngrok -> Jenkins).
+    // Needs the "GitHub" plugin; Jenkins registers this trigger after the first manual build.
+    triggers {
+        githubPush()
+    }
+
     parameters {
         booleanParam(
             name: 'SIMULATE_BUILD_FAILURE',
             defaultValue: false,
             description: 'Trigger deliberate test failure to demonstrate Jenkins red build, JUnit reporting, and alert email delivery'
+        )
+        booleanParam(
+            name: 'RUN_DOCKER',
+            defaultValue: true,
+            description: 'Build the Docker image, health-check it, and deploy it on http://localhost:8000 (needs Docker Desktop running)'
         )
     }
 
@@ -21,6 +32,11 @@ pipeline {
         REPLAY = '0'
         JENKINS_SIMULATE_FAILURE = "${params.SIMULATE_BUILD_FAILURE ? '1' : '0'}"
         PYTHONUNBUFFERED = '1'
+        // Public Firebase web config (same values as render.yaml). Needed so the login page
+        // renders the Google sign-in button that tests/test_auth.py checks for.
+        FIREBASE_PROJECT_ID = 'threatwatch-a41a0'
+        FIREBASE_API_KEY = 'AIzaSyD8MwBtD4jb_xvqSwiE5PpfTJH1AyWKghU'
+        IMAGE_NAME = 'threatwatch'
     }
 
     stages {
@@ -125,6 +141,69 @@ pipeline {
                                 exit /b 1
                             )
                             echo Security audit passed: secrets hygiene verified.
+                        '''
+                    }
+                }
+            }
+        }
+        stage('Docker Build & Smoke Test') {
+            when { expression { params.RUN_DOCKER } }
+            steps {
+                echo 'Building Docker image and verifying the container starts healthy...'
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} -t ${IMAGE_NAME}:latest .
+                            docker rm -f threatwatch-ci 2>/dev/null || true
+                            docker run -d --name threatwatch-ci -p 5050:5000 \
+                                -e SECRET_KEY=ci-smoke -e SEED_DEMO=0 -e REPLAY=0 -e WEB_CONCURRENCY=1 \
+                                ${IMAGE_NAME}:${BUILD_NUMBER}
+                            for i in $(seq 1 45); do
+                                if curl -fsS http://localhost:5050/api/health | grep -q '"status":"ok"'; then
+                                    echo "Container healthy after ${i} checks"; exit 0
+                                fi
+                                sleep 2
+                            done
+                            echo "Container did not become healthy:"; docker logs threatwatch-ci; exit 1
+                        '''
+                    } else {
+                        bat '''
+                            docker build -t %IMAGE_NAME%:%BUILD_NUMBER% -t %IMAGE_NAME%:latest . || exit /b 1
+                            docker rm -f threatwatch-ci 2>nul
+                            docker run -d --name threatwatch-ci -p 5050:5000 -e SECRET_KEY=ci-smoke -e SEED_DEMO=0 -e REPLAY=0 -e WEB_CONCURRENCY=1 %IMAGE_NAME%:%BUILD_NUMBER% || exit /b 1
+                            powershell -NoProfile -Command "$ok=$false; for($i=1; $i -le 45; $i++){ try { $r = Invoke-RestMethod -Uri http://localhost:5050/api/health -TimeoutSec 3; if($r.status -eq 'ok'){ Write-Host ('Container healthy after ' + $i + ' checks'); $ok=$true; break } } catch {}; Start-Sleep -Seconds 2 }; if(-not $ok){ Write-Host 'Container did not become healthy:'; docker logs threatwatch-ci; exit 1 }"
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    script {
+                        if (isUnix()) { sh 'docker rm -f threatwatch-ci 2>/dev/null || true' }
+                        else { bat 'docker rm -f threatwatch-ci 2>nul & exit /b 0' }
+                    }
+                }
+            }
+        }
+
+        stage('Deploy (local Docker)') {
+            when { expression { params.RUN_DOCKER } }
+            steps {
+                echo 'Deploying the tested image as the live container on http://localhost:8000 ...'
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            docker rm -f threatwatch-live 2>/dev/null || true
+                            docker run -d --name threatwatch-live --restart unless-stopped -p 8000:5000 \
+                                -e SECRET_KEY=threatwatch-live-${BUILD_NUMBER} -e SEED_DEMO=1 -e REPLAY=1 -e WEB_CONCURRENCY=1 \
+                                ${IMAGE_NAME}:${BUILD_NUMBER}
+                            echo "Deployed ${IMAGE_NAME}:${BUILD_NUMBER} -> http://localhost:8000"
+                        '''
+                    } else {
+                        bat '''
+                            docker rm -f threatwatch-live 2>nul
+                            docker run -d --name threatwatch-live --restart unless-stopped -p 8000:5000 -e SECRET_KEY=threatwatch-live-%BUILD_NUMBER% -e SEED_DEMO=1 -e REPLAY=1 -e WEB_CONCURRENCY=1 %IMAGE_NAME%:%BUILD_NUMBER% || exit /b 1
+                            echo Deployed %IMAGE_NAME%:%BUILD_NUMBER% to http://localhost:8000
                         '''
                     }
                 }

@@ -1,0 +1,26 @@
+# Keep the image small and free of secrets
+.git
+.gitignore
+.env
+.env.*
+venv/
+.venv/
+.venv310/
+**/__pycache__
+**/*.pyc
+.pytest_cache/
+.coverage
+reports/
+data/
+notebooks/
+postman/
+jenkins/
+docs/
+tests/
+dashboard/
+*.md
+!README_ML_INTEGRATION.txt
+Dockerfile
+docker-compose.yml
+Jenkinsfile
+render.yaml
