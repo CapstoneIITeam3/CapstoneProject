@@ -2,6 +2,7 @@
 from flask import Flask, request, jsonify
 from datetime import datetime, timezone
 from flasgger import Swagger
+from bson import ObjectId
 
 from ml.predict import predict
 from db import traffic_logs, alerts, check_database_connection
@@ -114,7 +115,7 @@ def predict_traffic():
                 "error": "Traffic data must be a JSON object"
             }), 400
 
-        # Get prediction from Adwitiya's trained ML model
+        # Get prediction from trained ML model
         result = predict(traffic)
 
         label = result["label"]
@@ -266,6 +267,97 @@ def get_alerts():
         return jsonify({
             "success": False,
             "error": "Unable to retrieve alerts"
+        }), 500
+
+
+# Update security alert status
+@app.route("/api/alerts/<alert_id>", methods=["PATCH"])
+def update_alert_status(alert_id):
+    """
+    Update the status of a security alert
+    ---
+    tags:
+      - Security Alerts
+    parameters:
+      - name: alert_id
+        in: path
+        type: string
+        required: true
+        description: MongoDB alert ID
+      - in: body
+        name: status
+        required: true
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+              enum:
+                - New
+                - In Progress
+                - Resolved
+    responses:
+      200:
+        description: Alert status updated successfully
+      400:
+        description: Invalid status or request body
+      404:
+        description: Alert not found
+      500:
+        description: Database update failed
+    """
+    try:
+        data = request.get_json(silent=True)
+
+        if not isinstance(data, dict) or not isinstance(data.get("status"), str):
+            return jsonify({
+                "success": False,
+                "error": "A valid status is required"
+            }), 400
+
+        status = data["status"].strip().title()
+
+        allowed_statuses = ["New", "In Progress", "Resolved"]
+
+        if status not in allowed_statuses:
+            return jsonify({
+                "success": False,
+                "error": "Status must be New, In Progress, or Resolved"
+            }), 400
+
+        query = {"_id": alert_id}
+
+        if ObjectId.is_valid(alert_id):
+            query = {"_id": ObjectId(alert_id)}
+
+        result = alerts.update_one(
+            query,
+            {
+                "$set": {
+                    "status": status,
+                    "updated_at": datetime.now(timezone.utc)
+                }
+            }
+        )
+
+        if result.matched_count == 0:
+            return jsonify({
+                "success": False,
+                "error": "Alert not found"
+            }), 404
+
+        return jsonify({
+            "success": True,
+            "message": "Alert status updated successfully",
+            "alert_id": alert_id,
+            "status": status
+        }), 200
+
+    except Exception:
+        app.logger.exception("Unable to update alert status")
+        return jsonify({
+            "success": False,
+            "error": "Unable to update alert status"
         }), 500
 
 
