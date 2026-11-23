@@ -87,7 +87,7 @@ def predict_traffic():
           properties:
             traffic:
               type: object
-              description: Network traffic containing the 41 NSL-KDD features
+              description: Network traffic containing NSL-KDD features
               additionalProperties: true
         description: Send traffic data either inside a traffic object or directly as a JSON object
     responses:
@@ -113,6 +113,19 @@ def predict_traffic():
             return jsonify({
                 "success": False,
                 "error": "Traffic data must be a JSON object"
+            }), 400
+
+        # Validate traffic input
+        if not traffic:
+            return jsonify({
+                "success": False,
+                "error": "Traffic data cannot be empty"
+            }), 400
+
+        if not all(isinstance(key, str) for key in traffic):
+            return jsonify({
+                "success": False,
+                "error": "All traffic feature names must be strings"
             }), 400
 
         # Get prediction from trained ML model
@@ -316,7 +329,6 @@ def update_alert_status(alert_id):
             }), 400
 
         status = data["status"].strip().title()
-
         allowed_statuses = ["New", "In Progress", "Resolved"]
 
         if status not in allowed_statuses:
