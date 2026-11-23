@@ -11,3 +11,4 @@ Input: dict containing the 41 NSL-KDD traffic features.
 Output: {"label": "Normal" | "Suspicious" | "Malicious", "score": 0.0-1.0}
 
 The saved model files are included. Do not retrain or modify the models during integration.
+
