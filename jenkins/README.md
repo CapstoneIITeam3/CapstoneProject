@@ -1,5 +1,7 @@
 # ThreatWatch Jenkins CI/CD Pipeline
 
+> **Setting it up end to end (Docker, ngrok, GitHub webhook, Gmail) and the live demo script: see [CICD_SETUP.md](CICD_SETUP.md).**
+
 Automated Continuous Integration and Continuous Deployment (CI/CD) pipeline for ThreatWatch AI-IDS, providing automated test execution, JUnit analytics, regression protection, and contributor email alerting.
 
 ---
