@@ -18,6 +18,41 @@ app.config["SWAGGER"] = {
 swagger = Swagger(app)
 
 
+# Standard API error responses
+@app.errorhandler(400)
+def bad_request(error):
+    return jsonify({
+        "success": False,
+        "error": "Bad request",
+        "message": str(error.description)
+    }), 400
+
+
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({
+        "success": False,
+        "error": "API endpoint not found"
+    }), 404
+
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    return jsonify({
+        "success": False,
+        "error": "HTTP method not allowed"
+    }), 405
+
+
+@app.errorhandler(500)
+def internal_server_error(error):
+    app.logger.exception("Internal server error")
+    return jsonify({
+        "success": False,
+        "error": "Internal server error"
+    }), 500
+
+
 # Convert ML prediction labels into severity levels
 def get_severity(label):
     severity_map = {
