@@ -12,10 +12,15 @@ MONGO_URI = os.getenv("MONGO_URI")
 if not MONGO_URI:
     raise ValueError("MONGO_URI is missing from .env")
 
-# Establish MongoDB connection
+# Configure MongoDB connection
 client = MongoClient(
     MONGO_URI,
-    serverSelectionTimeoutMS=10000
+    serverSelectionTimeoutMS=10000,
+    connectTimeoutMS=10000,
+    socketTimeoutMS=10000,
+    maxPoolSize=50,
+    retryWrites=True,
+    appname="ThreatWatch-AI-IDS"
 )
 
 # Select database
@@ -25,7 +30,7 @@ db = client["ai_ids_db"]
 traffic_logs = db["traffic_logs"]
 alerts = db["alerts"]
 
-# Create indexes for faster retrieval of recent records
+# Create indexes for faster retrieval
 traffic_logs.create_index([("timestamp", -1)])
 alerts.create_index([("timestamp", -1)])
 
