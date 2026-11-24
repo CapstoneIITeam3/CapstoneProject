@@ -56,6 +56,7 @@ from db import (
     alerts_col,
     settings_col,
     audit_logs_col,
+    is_mock_db,
 )
 from models import (
     DEFAULT_SETTINGS,
@@ -1300,8 +1301,8 @@ def api_predict():
         },
         "threat_score": round(result_payload["threat_score"], 4),
         "tier": label,
-        "anomaly_detected": result_payload.get("anomaly_detected", False),
-        "attack_category": result_payload.get("attack_category", "Normal"),
+        "anomaly_detected": bool(result_payload.get("anomaly_flag")),
+        "attack_category": result_payload.get("attack_category") or "Normal",
         "log_id": str(lr_doc["id"]),
         "timestamp": iso(lr_doc["timestamp"]),
     }
@@ -1788,7 +1789,6 @@ def api_alerts():
 
     return jsonify(items=items, page=page, pages=pages, total=total, counts=counts, max_id=max_id)
 
-
 @app.route("/api/alerts/<alert_id>/<action>", methods=["POST"])
 @login_required
 def api_alert_action(alert_id, action):
@@ -1858,6 +1858,75 @@ def api_alert_action(alert_id, action):
     log_records_col.update_one({"alert_id": a["id"]}, {"$set": {"alert_status": new_status}})
 
     audit(f"alert_{action}", f"alert #{a.get('id')} ({a.get('severity')}, log #{a.get('log_id')})", current_user.id)
+    a.update(update_doc)
+    return jsonify(alert_to_dict(a))
+
+
+@app.route("/api/alerts/<alert_id>", methods=["PATCH"])
+@login_required
+def api_alert_patch(alert_id):
+    """
+    Update Alert Status (Triage)
+    ---
+    tags:
+      - Security Alerts
+    security:
+      - Bearer: []
+      - BasicAuth: []
+      - ApiKeyAuth: []
+      - CsrfToken: []
+    consumes:
+      - application/json
+    parameters:
+      - name: alert_id
+        in: path
+        type: string
+        required: true
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [open, acknowledged, dismissed, resolved]
+            note:
+              type: string
+    responses:
+      200:
+        description: Alert updated
+      400:
+        description: Invalid status or CSRF token
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      401:
+        description: Authentication required
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+      404:
+        description: Alert not found
+        schema:
+          $ref: '#/definitions/ErrorResponse'
+    """
+    body = request.get_json(silent=True) or {}
+    status_map = {"open": "open", "reopen": "open", "acknowledged": "acknowledged",
+                  "resolved": "acknowledged", "dismissed": "dismissed"}
+    new_status = status_map.get(body.get("status"))
+    if not new_status:
+        return jsonify(error="status must be one of: open, acknowledged, dismissed, resolved"), 400
+    a = find_alert_by_id(alert_id) or abort(404)
+    update_doc = {
+        "status": new_status,
+        "reviewed_by": current_user.username if new_status != "open" else None,
+        "reviewed_at": utcnow() if new_status != "open" else None,
+    }
+    if body.get("note") is not None:
+        update_doc["note"] = str(body["note"])[:500]
+    alerts_col.update_one({"_id": a["_id"]}, {"$set": update_doc})
+    log_records_col.update_one({"alert_id": a["id"]}, {"$set": {"alert_status": new_status}})
+    audit("alert_patch", f"alert #{a.get('id')} -> {new_status}", current_user.id)
     a.update(update_doc)
     return jsonify(alert_to_dict(a))
 
@@ -1947,6 +2016,7 @@ def api_health():
             status="ok" if is_healthy else "degraded",
             service="ThreatWatch AI-IDS",
             database="connected" if db_ok else "disconnected",
+            storage="in-memory (mongomock)" if is_mock_db else "mongodb",
             detector=det_status,
             timestamp=iso(utcnow()),
         ),

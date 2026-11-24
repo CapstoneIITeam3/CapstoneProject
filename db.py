@@ -50,6 +50,8 @@ for attempt in range(1, max_retries + 1):
                 safe_target,
                 e,
             )
+            if os.getenv("ALLOW_MOCK_DB", "1") == "0":
+                raise RuntimeError(f"MongoDB Atlas unreachable: {e}")
             import mongomock
             client = mongomock.MongoClient()
             is_mock_db = True
